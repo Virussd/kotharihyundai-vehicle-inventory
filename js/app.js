@@ -77,52 +77,43 @@ function renderNav() {
   }));
 }
 
-async function login(e){
+async function login(e) {
   e.preventDefault();
-  const username=normalizeUsername($("username").value);
-  const password=$("password").value;
+  const username = normalizeUsername($("username").value);
+  const password = $("password").value;
 
-  if(!state.supabase){
-    $("loginMessage").textContent="Supabase is not configured. Check js/config.js.";
-    $("loginMessage").className="message error";
+  if (!state.supabase) {
+    $("loginMessage").textContent = "Supabase is not configured. Check js/config.js.";
+    $("loginMessage").className = "message error";
     return;
   }
-  if(!username || !password){
-    $("loginMessage").textContent="Enter username and password.";
-    $("loginMessage").className="message error";
+  if (!username || !password) {
+    $("loginMessage").textContent = "Enter username and password.";
+    $("loginMessage").className = "message error";
     return;
   }
 
-  const email=usernameToAuthEmail(username);
-  $("loginMessage").textContent="Signing in...";
-  $("loginMessage").className="message";
-
-  try{
-    const result=await Promise.race([
-      state.supabase.auth.signInWithPassword({email,password}),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error("Supabase login request timed out after 15 seconds.")),15000))
-    ]);
-
-    const {data,error}=result;
-    if(error){
-      console.error("Supabase login error:",error);
-      $("loginMessage").textContent=error.message || "Invalid username or password.";
-      $("loginMessage").className="message error";
-      return;
-    }
-    if(!data?.user){
-      $("loginMessage").textContent="Login failed: no user session returned.";
-      $("loginMessage").className="message error";
-      return;
-    }
-
-    $("loginMessage").textContent="Login successful. Loading dashboard...";
-    await showApp(data.user);
-  }catch(err){
-    console.error("Login exception:",err);
-    $("loginMessage").textContent=err?.message || "Unable to connect to Supabase.";
-    $("loginMessage").className="message error";
+  // Production login: only admin2 is enabled for the current setup.
+  if (username !== "admin2") {
+    $("loginMessage").textContent = "Invalid username or password.";
+    $("loginMessage").className = "message error";
+    return;
   }
+
+  $("loginMessage").textContent = "Signing in...";
+  $("loginMessage").className = "message";
+
+  const email = "shubhamdamajighar6987@gmail.com";
+  const { data, error } = await state.supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    console.error("Supabase login error:", error);
+    $("loginMessage").textContent = "Invalid username or password.";
+    $("loginMessage").className = "message error";
+    return;
+  }
+
+  await showApp(data.user);
 }
 
 async function logout(){
@@ -137,45 +128,34 @@ function showLogin(){
 
 async function showApp(user){
   state.user=user;
-
-  // Show the application immediately after successful Auth.
-  // Profile loading has its own timeout so the login screen never stays stuck.
   $("loginView").classList.add("hidden");
   $("appView").classList.remove("hidden");
-  $("userName").textContent=user.user_metadata?.full_name || user.email || "User";
 
-  try{
-    const result=await Promise.race([
-      state.supabase.from("user_profiles")
-        .select("id,username,full_name,active,location_id,roles(name)")
-        .eq("id",user.id)
-        .maybeSingle(),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error("User profile request timed out.")),10000))
-    ]);
+  let displayName = user.user_metadata?.username || user.user_metadata?.full_name || "User";
+  try {
+    const p=await state.supabase.from("user_profiles")
+      .select("username,full_name,active,roles(name)")
+      .eq("id",user.id).maybeSingle();
 
-    const {data:profile,error}=result;
-    if(error) throw error;
-    if(!profile) throw new Error("User profile not found for this Auth user.");
-
-    if(profile.active!==true){
-      await state.supabase.auth.signOut();
-      showLogin();
-      $("loginMessage").textContent="This user is inactive. Contact Admin.";
-      $("loginMessage").className="message error";
-      return;
+    if(p.error) console.warn(p.error.message);
+    if(p.data){
+      if(p.data.active === false){
+        await state.supabase.auth.signOut();
+        $("loginMessage").textContent="This user is inactive. Contact Admin.";
+        $("loginMessage").className="message error";
+        showLogin();
+        return;
+      }
+      displayName=p.data.full_name || p.data.username || displayName;
+      state.profile=p.data;
+      state.role=p.data.roles?.name || "";
     }
-
-    state.profile=profile;
-    state.role=profile.roles?.name || "";
-    state.isAllLocations=state.role==="Admin" && profile.location_id===null;
-    $("userName").textContent=profile.full_name || profile.username || "User";
-  }catch(err){
-    console.error("Profile load error:",err);
-    $("content").innerHTML=`<div class="panel"><div class="notice"><b>Login successful</b><p>Unable to load user profile: ${esc(err?.message || "Unknown error")}</p><p>Check the <b>user_profiles</b> RLS policy and Admin profile.</p></div></div>`;
-    return;
+  } catch(err) {
+    console.warn(err);
   }
 
-  await loadPage("dashboard");
+  $("userName").textContent=displayName;
+  loadPage("dashboard");
 }
 
 function navActive(){document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.page===state.page));}
@@ -184,9 +164,18 @@ function normalizeUsername(v){
   return String(v||"").trim().toLowerCase().replace(/\s+/g,"");
 }
 
+function normalizePhone(v){
+  let p=String(v||"").replace(/[^\d+]/g,"");
+  if(p.startsWith("0") && p.length===11) p="+91"+p.slice(1);
+  if(/^\d{10}$/.test(p)) p="+91"+p;
+  if(p.startsWith("91") && p.length===12) p="+"+p;
+  return p;
+}
 
 function usernameToAuthEmail(username){
-  return `${normalizeUsername(username)}@login.kotharihyundai.local`;
+  return normalizeUsername(username) === "admin2"
+    ? "shubhamdamajighar6987@gmail.com"
+    : "";
 }
 
 async function loadPage(page) {

@@ -1,29 +1,16 @@
-# Hyundai Vehicle Inventory System
+# Kothari Hyundai Vehicle Inventory - Updated Login
 
-## Live stack
-- HTML / CSS / JavaScript
-- Supabase JS
-- Supabase PostgreSQL / Auth / RLS / Realtime
-- GitHub
-- Netlify
+Changes in this package:
+- Username + password login only.
+- Removed Forgot Password / OTP reset UI and code.
+- Only `admin2` is enabled in the frontend login mapping.
+- `admin2` authenticates with `shubhamdamajighar6987@gmail.com` in Supabase Auth.
+- Supabase project URL and publishable key are included in `js/config.js`.
+- No service-role key is included.
 
-## Import mapping
-- Order Report Import: `SaleDealerOrderStatus` Excel/CSV -> `vehicle_orders`
-- Purchase Report Import: `VehicleDeliveryStatusReport` Excel/CSV -> `vehicles` (upsert by VIN)
-- Import History -> `import_batches`
-
-The importer previews Excel/CSV data in the browser, validates the expected columns, then writes to Supabase.
-
-## Deployment
-Push changes to GitHub. Netlify will automatically deploy the new commit when the repository is connected.
-
-
-## Kothari Hyundai Final Login Design
-
-- Login uses Username + Password only.
-- Email is not shown or entered by users.
-- Phone number and OTP/password-reset flow have been removed.
-- Internal Supabase Auth email is generated from username and is never shown in the UI.
-- Admin creates users from Administration -> Create Users & Roles.
-- Roles: Admin, Accounts, Gate Operator, Viewer.
-- The Supabase service-role key must remain server-side in the Edge Function and must never be placed in frontend files.
+Admin profile expected in Supabase:
+- UID: 360fc0dd-28d5-47d9-935a-feab36a48624
+- Username: admin2
+- Role: Admin
+- Location: NULL (all locations)
+- Active: true
