@@ -120,7 +120,7 @@ function showLogin(){
 async function showApp(user){
   state.user=user;
 
-  const {data: profile, error} = await state.supabase
+  const {data: profile, error}=await state.supabase
     .from("user_profiles")
     .select("id,username,full_name,active,location_id,roles(name)")
     .eq("id", user.id)
@@ -150,6 +150,7 @@ async function showApp(user){
   $("loginView").classList.add("hidden");
   $("appView").classList.remove("hidden");
   $("userName").textContent=profile.full_name || profile.username || "User";
+  $("loginMessage").textContent="";
   loadPage("dashboard");
 }
 
@@ -159,19 +160,12 @@ function normalizeUsername(v){
   return String(v||"").trim().toLowerCase().replace(/\s+/g,"");
 }
 
-function normalizePhone(v){
-  let p=String(v||"").replace(/[^\d+]/g,"");
-  if(p.startsWith("0") && p.length===11) p="+91"+p.slice(1);
-  if(/^\d{10}$/.test(p)) p="+91"+p;
-  if(p.startsWith("91") && p.length===12) p="+"+p;
-  return p;
-}
 
 function usernameToAuthEmail(username){
   return `${normalizeUsername(username)}@login.kotharihyundai.local`;
 }
 
-function loadPage(page) {
+async function loadPage(page) {
   navActive();
   const item = MENU.flatMap(x=>x.items).find(x=>x[0]===page);
   $("pageTitle").textContent=item?.[1] || "Dashboard";
