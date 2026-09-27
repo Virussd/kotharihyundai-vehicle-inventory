@@ -1,12 +1,18 @@
 # Hyundai Vehicle Inventory System
 
-Deployment-ready static frontend for Netlify + Supabase.
+## Live stack
+- HTML / CSS / JavaScript
+- Supabase JS
+- Supabase PostgreSQL / Auth / RLS / Realtime
+- GitHub
+- Netlify
 
-## Supabase
-- Project URL configured in `js/config.js`
-- Uses the Supabase publishable/anon key in the frontend
-- Never use a Supabase secret/service_role key in frontend code
+## Import mapping
+- Order Report Import: `SaleDealerOrderStatus` Excel/CSV -> `vehicle_orders`
+- Purchase Report Import: `VehicleDeliveryStatusReport` Excel/CSV -> `vehicles` (upsert by VIN)
+- Import History -> `import_batches`
 
-## Netlify
-- No build command required
-- Publish directory: `/`
+The importer previews Excel/CSV data in the browser, validates the expected columns, then writes to Supabase.
+
+## Deployment
+Push changes to GitHub. Netlify will automatically deploy the new commit when the repository is connected.

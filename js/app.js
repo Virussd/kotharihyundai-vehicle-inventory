@@ -189,15 +189,127 @@ async function loadTimeline(){
  $("timelineResults").innerHTML=(r.data||[]).map(x=>`<div class="timeline"><div class="time">${date(x.created_at)}</div><div><b>${esc(x.event_type)}</b><p>${esc(x.description||"")}</p><small>${esc(x.old_status||"")} → ${esc(x.new_status||"")}</small></div></div>`).join("")||emptyState("No timeline events.");
 }
 
+let importRows = [];
+
 function renderImport(page){
  const type=page.startsWith("order")?"ORDER":page.startsWith("purchase")?"PURCHASE":page.startsWith("sales")?"SALES":null;
- $("content").innerHTML= type ? `<div class="panel import-panel"><h3>${type} Report Import</h3><p>Upload Excel/CSV, validate columns, preview rows, then import into Supabase.</p><div class="dropzone"><input id="fileInput" type="file" accept=".csv,.xlsx,.xls"><div>Choose CSV / Excel file</div></div><div id="importPreview"></div><button class="primary-btn" onclick="startImport('${type}')">Validate & Import</button></div>` : `<div class="panel"><h3>Import History</h3><div id="importHistory">${emptyState("No import history available.")}</div></div>`;
+ const help = type === "ORDER"
+   ? "Expected file: SaleDealerOrderStatus. Imports Order Date, Order No, Model, Variant, Color, Order Amount, VIN, Order Status and customer fields into Pending Order data."
+   : type === "PURCHASE"
+   ? "Expected file: VehicleDeliveryStatusReport. Imports VIN, chassis/engine, model, variant, color, financier, invoice values and purchase date into Vehicle Stock."
+   : "";
+ $("content").innerHTML= type ? `<div class="panel import-panel"><h3>${type} Report Import</h3><p>${help}</p><div class="dropzone"><input id="fileInput" type="file" accept=".csv,.xlsx,.xls"><div>Choose CSV / Excel file</div></div><div id="importPreview">${emptyState("Choose a file to preview rows.")}</div><button class="primary-btn" onclick="startImport('${type}')">Validate & Import</button></div>` : `<div class="panel"><h3>Import History</h3><div id="importHistory">${emptyState("No import history available.")}</div></div>`;
  if(!type) loadImportHistory();
+ $("fileInput")?.addEventListener("change", previewImportFile);
 }
+
+async function previewImportFile(){
+ const file=$("fileInput").files[0];
+ if(!file)return;
+ try{
+   importRows=await readSpreadsheet(file);
+   const type=state.page.startsWith("order")?"ORDER":state.page.startsWith("purchase")?"PURCHASE":"SALES";
+   const mapped=mapImportRows(type,importRows);
+   const sample=mapped.slice(0,10);
+   $("importPreview").innerHTML=`<div class="notice"><b>${file.name}</b><p>${mapped.length.toLocaleString("en-IN")} data rows detected. Previewing first ${sample.length}.</p></div>`+
+     table(Object.keys(sample[0]||{}),sample.map(r=>Object.values(r)));
+ }catch(e){
+   importRows=[];
+   $("importPreview").innerHTML=emptyState("Unable to read file: "+e.message);
+ }
+}
+
+async function readSpreadsheet(file){
+ if(typeof XLSX === "undefined") throw new Error("Excel importer library did not load. Refresh the page and try again.");
+ const buf=await file.arrayBuffer();
+ const wb=XLSX.read(buf,{type:"array",cellDates:false});
+ const ws=wb.Sheets[wb.SheetNames[0]];
+ return XLSX.utils.sheet_to_json(ws,{defval:"",raw:false,blankrows:false});
+}
+
+function cleanText(v){return String(v??"").trim();}
+function numberValue(v){
+ const n=Number(String(v??"").replace(/,/g,""));
+ return Number.isFinite(n)?n:0;
+}
+function dateValue(v){
+ const s=cleanText(v); if(!s)return null;
+ const parts=s.split("/");
+ if(parts.length===3){
+   const [d,m,y]=parts.map(x=>Number(x));
+   if(y>1900)return `${String(y).padStart(4,"0")}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+ }
+ const dt=new Date(s); return Number.isNaN(dt.getTime())?null:dt.toISOString().slice(0,10);
+}
+function pick(r,...names){for(const n of names){if(r[n]!==undefined&&cleanText(r[n])!=="")return r[n];}return "";}
+function normalizeOrderStatus(v){
+ const s=cleanText(v).toUpperCase();
+ if(s.includes("DELIVER"))return "DELIVERED";
+ if(s.includes("INVOICE")||s.includes("BILL"))return "BILLED";
+ if(s.includes("TRANSIT"))return "IN_TRANSIT";
+ if(s.includes("CANCEL"))return "CANCELLED";
+ return "PENDING";
+}
+function mapImportRows(type,rows){
+ if(type==="ORDER") return rows.filter(r=>cleanText(pick(r,"Order No","Order No.","Order Number"))).map(r=>({
+   order_no:cleanText(pick(r,"Order No","Order No.","Order Number")),
+   order_date:dateValue(pick(r,"Order Date")),
+   model:cleanText(pick(r,"Model")),
+   variant:cleanText(pick(r,"Variant")),
+   color:cleanText(pick(r,"Color")),
+   quantity:1,
+   expected_date:dateValue(pick(r,"Assigned Date","Confirm date","Confirmed Date")),
+   status:normalizeOrderStatus(pick(r,"Order Status","Status")),
+   dealer_code:cleanText(pick(r,"Dealer","Main Dealer")),
+   remarks:`PIS: ${cleanText(pick(r,"PIS No"))} | VIN: ${cleanText(pick(r,"VIN No.","VIN No"))} | Customer: ${cleanText(pick(r,"Customer Name"))}`
+ }));
+ if(type==="PURCHASE") return rows.filter(r=>cleanText(pick(r,"Vin No.","VIN No","VIN"))).map(r=>({
+   vin:cleanText(pick(r,"Vin No.","VIN No","VIN")),
+   chassis_no:cleanText(pick(r,"Vin No.","VIN No","VIN")),
+   engine_no:cleanText(pick(r,"Engine No ","Engine No","Engine Number")),
+   model:cleanText(pick(r,"Model")),
+   variant:cleanText(pick(r,"Variant")),
+   color:cleanText(pick(r,"Color")),
+   fuel_type:cleanText(pick(r,"Emission Type")),
+   transmission:"",
+   order_no:cleanText(pick(r,"Order No","Order No.")),
+   dealer_code:cleanText(pick(r,"Dealer","Main Dealer")),
+   finance_company:cleanText(pick(r,"Financier Name")),
+   status:cleanText(pick(r,"GRN No"))?"AVAILABLE":"IN_TRANSIT",
+   stock_value:numberValue(pick(r,"HMI Invoice Amount","Total Invoice value","Basic Price")),
+   purchase_date:dateValue(pick(r,"HMI Invoice Date","Order Date")),
+   remarks:`HMI Invoice: ${cleanText(pick(r,"HMI Invoice No"))} | GRN: ${cleanText(pick(r,"GRN No"))} | Transporter: ${cleanText(pick(r,"Transporter Name"))}`
+ }));
+ return rows;
+}
+
 async function startImport(type){
  const file=$("fileInput").files[0]; if(!file){alert("Select a file.");return;}
  if(!state.supabase){alert("Connect Supabase first.");return;}
- alert("File selected. The production importer should map the file columns to the configured Supabase fields before inserting data.");
+ try{
+   const rows=importRows.length?importRows:await readSpreadsheet(file);
+   const mapped=mapImportRows(type,rows);
+   if(!mapped.length){alert("No valid rows found. Check the report columns.");return;}
+   let success=0, failed=0, errors=[];
+   if(type==="ORDER"){
+     for(const row of mapped){
+       const {error}=await state.supabase.from("vehicle_orders").insert(row);
+       if(error){failed++;if(errors.length<10)errors.push(error.message);}else success++;
+     }
+   }else if(type==="PURCHASE"){
+     for(const row of mapped){
+       const {error}=await state.supabase.from("vehicles").upsert(row,{onConflict:"vin"});
+       if(error){failed++;if(errors.length<10)errors.push(error.message);}else success++;
+     }
+   }else{
+     alert("Sales import is not configured yet. Use Order or Purchase Import.");return;
+   }
+   const batch={import_type:type,file_name:file.name,total_rows:mapped.length,successful_rows:success,failed_rows:failed,status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",error_details:errors.join(" | ")||null,created_by:state.user?.id||null};
+   await state.supabase.from("import_batches").insert(batch);
+   $("importPreview").innerHTML=`<div class="notice"><b>Import completed</b><p>Total: ${mapped.length} | Success: ${success} | Failed: ${failed}</p>${errors.length?`<small>${esc(errors.join(" | "))}</small>`:""}</div>`;
+   if(failed===0)alert(`${type} import completed: ${success} rows imported.`);else alert(`${type} import completed with errors. Success: ${success}, Failed: ${failed}`);
+   importRows=[];
+ }catch(e){alert(e.message);}
 }
 async function loadImportHistory(){
  if(!state.supabase)return;
