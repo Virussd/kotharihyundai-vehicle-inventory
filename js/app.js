@@ -32,7 +32,7 @@ const MENU = [
   ]}
 ];
 
-const state = {page:"dashboard", user:null, profile:null, role:null, supabase:null, connected:false};
+const state = {page:"dashboard", user:null, profile:null, role:"", supabase:null, connected:false};
 
 const $ = id => document.getElementById(id);
 const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -67,131 +67,129 @@ function setConnection(ok) {
   $("connectionText").textContent = ok ? "Supabase connected" : "Supabase not configured";
 }
 
-function allowedPages(){
-  if(state.role === "admin") return null;
-
-  if(state.role === "accounts"){
-    return new Set([
-      "dashboard","vehicles","search","status","timeline",
-      "order-import","purchase-import","sales-import","import-history",
-      "bhilarwadi","gate","bulk-gate","gate-pass","register",
-      "delivery-entry","delivered","delivery-history",
-      "location-report","model-report","finance-report","aging-report",
-      "delivery-report","pending-report","transit-report","gate-report","dealer-report"
-    ]);
-  }
-
-  if(state.role === "gate operator"){
-    return new Set(["gate","gate-pass","register"]);
-  }
-
-  if(state.role === "viewer"){
-    return new Set([
-      "dashboard","location-report","model-report","finance-report","aging-report",
-      "delivery-report","pending-report","transit-report","gate-report","dealer-report"
-    ]);
-  }
-
-  return new Set(["dashboard"]);
-}
-
 function renderNav() {
-  const allowed = allowedPages();
-
-  $("nav").innerHTML = MENU.map(group => {
-    const items = allowed === null
-      ? group.items
-      : group.items.filter(([id]) => allowed.has(id));
-
-    if(!items.length) return "";
-
-    return `<div class="nav-group">
-      <div class="nav-label">${group.section}</div>
-      ${items.map(([id,label,icon]) =>
-        `<button class="nav-item" data-page="${id}">
-          <span>${icon}</span>${label}
-        </button>`).join("")}
-    </div>`;
-  }).join("");
-
+  $("nav").innerHTML = MENU.map(group => `
+    <div class="nav-group"><div class="nav-label">${group.section}</div>
+    ${group.items.map(([id,label,icon]) => `<button class="nav-item" data-page="${id}"><span>${icon}</span>${label}</button>`).join("")}
+    </div>`).join("");
   document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
-    state.page=b.dataset.page;
-    document.querySelector(".sidebar").classList.remove("open");
-    loadPage(state.page);
+    state.page=b.dataset.page; document.querySelector(".sidebar").classList.remove("open"); loadPage(state.page);
   }));
 }
 
-async function login(e) {
+async function login(e){
   e.preventDefault();
-  const username = $("username").value.trim().toLowerCase();
-  const password = $("password").value;
+  const username=normalizeUsername($("username").value);
+  const password=$("password").value;
 
-  if (!username || !password) {
-    $("loginMessage").textContent = "Enter username and password.";
-    $("loginMessage").className = "message error";
+  if(!state.supabase){
+    $("loginMessage").textContent="Supabase is not configured. Check js/config.js.";
+    $("loginMessage").className="message error";
+    return;
+  }
+  if(!username || !password){
+    $("loginMessage").textContent="Enter username and password.";
+    $("loginMessage").className="message error";
     return;
   }
 
-  if (!state.supabase) {
-    $("loginMessage").textContent = "Supabase is not configured.";
-    $("loginMessage").className = "message error";
-    return;
-  }
+  const email=usernameToAuthEmail(username);
+  $("loginMessage").textContent="Signing in...";
+  $("loginMessage").className="message";
 
-  $("loginMessage").textContent = "Signing in...";
-  $("loginMessage").className = "message";
+  try{
+    const result=await Promise.race([
+      state.supabase.auth.signInWithPassword({email,password}),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error("Supabase login request timed out after 15 seconds.")),15000))
+    ]);
 
-  const {data,error} = await state.supabase.auth.signInWithPassword({
-    email: usernameEmail(username),
-    password
-  });
-
-  if(error){
-    $("loginMessage").textContent = "Invalid username or password.";
-    $("loginMessage").className = "message error";
-    return;
-  }
-
-  await showApp(data.user);
-}
-async function logout(){ if(state.supabase) await state.supabase.auth.signOut(); showLogin(); }
-function showLogin(){ $("loginView").classList.remove("hidden"); $("appView").classList.add("hidden"); }
-async function showApp(user){
-  state.user=user;
-  $("loginView").classList.add("hidden");
-  $("appView").classList.remove("hidden");
-
-  if(state.supabase){
-    const {data,error} = await state.supabase
-      .from("user_profiles")
-      .select("id,username,full_name,role_id,active,roles(name)")
-      .eq("id",user.id)
-      .maybeSingle();
-
-    if(error || !data || data.active === false){
-      await state.supabase.auth.signOut();
-      $("loginMessage").textContent = "User profile is inactive or not configured.";
-      $("loginMessage").className = "message error";
-      showLogin();
+    const {data,error}=result;
+    if(error){
+      console.error("Supabase login error:",error);
+      $("loginMessage").textContent=error.message || "Invalid username or password.";
+      $("loginMessage").className="message error";
+      return;
+    }
+    if(!data?.user){
+      $("loginMessage").textContent="Login failed: no user session returned.";
+      $("loginMessage").className="message error";
       return;
     }
 
-    state.profile=data;
-    state.role=String(data.roles?.name || "").toLowerCase();
-    $("userName").textContent=data.full_name || data.username || "User";
+    $("loginMessage").textContent="Login successful. Loading dashboard...";
+    await showApp(data.user);
+  }catch(err){
+    console.error("Login exception:",err);
+    $("loginMessage").textContent=err?.message || "Unable to connect to Supabase.";
+    $("loginMessage").className="message error";
+  }
+}
+
+async function logout(){
+  if(state.supabase) await state.supabase.auth.signOut();
+  showLogin();
+}
+
+function showLogin(){
+  $("loginView").classList.remove("hidden");
+  $("appView").classList.add("hidden");
+}
+
+async function showApp(user){
+  state.user=user;
+
+  // Show the application immediately after successful Auth.
+  // Profile loading has its own timeout so the login screen never stays stuck.
+  $("loginView").classList.add("hidden");
+  $("appView").classList.remove("hidden");
+  $("userName").textContent=user.user_metadata?.full_name || user.email || "User";
+
+  try{
+    const result=await Promise.race([
+      state.supabase.from("user_profiles")
+        .select("id,username,full_name,active,location_id,roles(name)")
+        .eq("id",user.id)
+        .maybeSingle(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error("User profile request timed out.")),10000))
+    ]);
+
+    const {data:profile,error}=result;
+    if(error) throw error;
+    if(!profile) throw new Error("User profile not found for this Auth user.");
+
+    if(profile.active!==true){
+      await state.supabase.auth.signOut();
+      showLogin();
+      $("loginMessage").textContent="This user is inactive. Contact Admin.";
+      $("loginMessage").className="message error";
+      return;
+    }
+
+    state.profile=profile;
+    state.role=profile.roles?.name || "";
+    state.isAllLocations=state.role==="Admin" && profile.location_id===null;
+    $("userName").textContent=profile.full_name || profile.username || "User";
+  }catch(err){
+    console.error("Profile load error:",err);
+    $("content").innerHTML=`<div class="panel"><div class="notice"><b>Login successful</b><p>Unable to load user profile: ${esc(err?.message || "Unknown error")}</p><p>Check the <b>user_profiles</b> RLS policy and Admin profile.</p></div></div>`;
+    return;
   }
 
-  renderNav();
-  loadPage("dashboard");
+  await loadPage("dashboard");
 }
+
 function navActive(){document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.page===state.page));}
 
+function normalizeUsername(v){
+  return String(v||"").trim().toLowerCase().replace(/\s+/g,"");
+}
+
+
+function usernameToAuthEmail(username){
+  return `${normalizeUsername(username)}@login.kotharihyundai.local`;
+}
+
 async function loadPage(page) {
-  const allowed = allowedPages();
-  if(allowed !== null && !allowed.has(page)){
-    page = state.role === "gate operator" ? "gate" : "dashboard";
-  }
-  state.page=page;
   navActive();
   const item = MENU.flatMap(x=>x.items).find(x=>x[0]===page);
   $("pageTitle").textContent=item?.[1] || "Dashboard";
@@ -283,127 +281,15 @@ async function loadTimeline(){
  $("timelineResults").innerHTML=(r.data||[]).map(x=>`<div class="timeline"><div class="time">${date(x.created_at)}</div><div><b>${esc(x.event_type)}</b><p>${esc(x.description||"")}</p><small>${esc(x.old_status||"")} → ${esc(x.new_status||"")}</small></div></div>`).join("")||emptyState("No timeline events.");
 }
 
-let importRows = [];
-
 function renderImport(page){
  const type=page.startsWith("order")?"ORDER":page.startsWith("purchase")?"PURCHASE":page.startsWith("sales")?"SALES":null;
- const help = type === "ORDER"
-   ? "Expected file: SaleDealerOrderStatus. Imports Order Date, Order No, Model, Variant, Color, Order Amount, VIN, Order Status and customer fields into Pending Order data."
-   : type === "PURCHASE"
-   ? "Expected file: VehicleDeliveryStatusReport. Imports VIN, chassis/engine, model, variant, color, financier, invoice values and purchase date into Vehicle Stock."
-   : "";
- $("content").innerHTML= type ? `<div class="panel import-panel"><h3>${type} Report Import</h3><p>${help}</p><div class="dropzone"><input id="fileInput" type="file" accept=".csv,.xlsx,.xls"><div>Choose CSV / Excel file</div></div><div id="importPreview">${emptyState("Choose a file to preview rows.")}</div><button class="primary-btn" onclick="startImport('${type}')">Validate & Import</button></div>` : `<div class="panel"><h3>Import History</h3><div id="importHistory">${emptyState("No import history available.")}</div></div>`;
+ $("content").innerHTML= type ? `<div class="panel import-panel"><h3>${type} Report Import</h3><p>Upload Excel/CSV, validate columns, preview rows, then import into Supabase.</p><div class="dropzone"><input id="fileInput" type="file" accept=".csv,.xlsx,.xls"><div>Choose CSV / Excel file</div></div><div id="importPreview"></div><button class="primary-btn" onclick="startImport('${type}')">Validate & Import</button></div>` : `<div class="panel"><h3>Import History</h3><div id="importHistory">${emptyState("No import history available.")}</div></div>`;
  if(!type) loadImportHistory();
- $("fileInput")?.addEventListener("change", previewImportFile);
 }
-
-async function previewImportFile(){
- const file=$("fileInput").files[0];
- if(!file)return;
- try{
-   importRows=await readSpreadsheet(file);
-   const type=state.page.startsWith("order")?"ORDER":state.page.startsWith("purchase")?"PURCHASE":"SALES";
-   const mapped=mapImportRows(type,importRows);
-   const sample=mapped.slice(0,10);
-   $("importPreview").innerHTML=`<div class="notice"><b>${file.name}</b><p>${mapped.length.toLocaleString("en-IN")} data rows detected. Previewing first ${sample.length}.</p></div>`+
-     table(Object.keys(sample[0]||{}),sample.map(r=>Object.values(r)));
- }catch(e){
-   importRows=[];
-   $("importPreview").innerHTML=emptyState("Unable to read file: "+e.message);
- }
-}
-
-async function readSpreadsheet(file){
- if(typeof XLSX === "undefined") throw new Error("Excel importer library did not load. Refresh the page and try again.");
- const buf=await file.arrayBuffer();
- const wb=XLSX.read(buf,{type:"array",cellDates:false});
- const ws=wb.Sheets[wb.SheetNames[0]];
- return XLSX.utils.sheet_to_json(ws,{defval:"",raw:false,blankrows:false});
-}
-
-function cleanText(v){return String(v??"").trim();}
-function numberValue(v){
- const n=Number(String(v??"").replace(/,/g,""));
- return Number.isFinite(n)?n:0;
-}
-function dateValue(v){
- const s=cleanText(v); if(!s)return null;
- const parts=s.split("/");
- if(parts.length===3){
-   const [d,m,y]=parts.map(x=>Number(x));
-   if(y>1900)return `${String(y).padStart(4,"0")}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
- }
- const dt=new Date(s); return Number.isNaN(dt.getTime())?null:dt.toISOString().slice(0,10);
-}
-function pick(r,...names){for(const n of names){if(r[n]!==undefined&&cleanText(r[n])!=="")return r[n];}return "";}
-function normalizeOrderStatus(v){
- const s=cleanText(v).toUpperCase();
- if(s.includes("DELIVER"))return "DELIVERED";
- if(s.includes("INVOICE")||s.includes("BILL"))return "BILLED";
- if(s.includes("TRANSIT"))return "IN_TRANSIT";
- if(s.includes("CANCEL"))return "CANCELLED";
- return "PENDING";
-}
-function mapImportRows(type,rows){
- if(type==="ORDER") return rows.filter(r=>cleanText(pick(r,"Order No","Order No.","Order Number"))).map(r=>({
-   order_no:cleanText(pick(r,"Order No","Order No.","Order Number")),
-   order_date:dateValue(pick(r,"Order Date")),
-   model:cleanText(pick(r,"Model")),
-   variant:cleanText(pick(r,"Variant")),
-   color:cleanText(pick(r,"Color")),
-   quantity:1,
-   expected_date:dateValue(pick(r,"Assigned Date","Confirm date","Confirmed Date")),
-   status:normalizeOrderStatus(pick(r,"Order Status","Status")),
-   dealer_code:cleanText(pick(r,"Dealer","Main Dealer")),
-   remarks:`PIS: ${cleanText(pick(r,"PIS No"))} | VIN: ${cleanText(pick(r,"VIN No.","VIN No"))} | Customer: ${cleanText(pick(r,"Customer Name"))}`
- }));
- if(type==="PURCHASE") return rows.filter(r=>cleanText(pick(r,"Vin No.","VIN No","VIN"))).map(r=>({
-   vin:cleanText(pick(r,"Vin No.","VIN No","VIN")),
-   chassis_no:cleanText(pick(r,"Vin No.","VIN No","VIN")),
-   engine_no:cleanText(pick(r,"Engine No ","Engine No","Engine Number")),
-   model:cleanText(pick(r,"Model")),
-   variant:cleanText(pick(r,"Variant")),
-   color:cleanText(pick(r,"Color")),
-   fuel_type:cleanText(pick(r,"Emission Type")),
-   transmission:"",
-   order_no:cleanText(pick(r,"Order No","Order No.")),
-   dealer_code:cleanText(pick(r,"Dealer","Main Dealer")),
-   finance_company:cleanText(pick(r,"Financier Name")),
-   status:cleanText(pick(r,"GRN No"))?"AVAILABLE":"IN_TRANSIT",
-   stock_value:numberValue(pick(r,"HMI Invoice Amount","Total Invoice value","Basic Price")),
-   purchase_date:dateValue(pick(r,"HMI Invoice Date","Order Date")),
-   remarks:`HMI Invoice: ${cleanText(pick(r,"HMI Invoice No"))} | GRN: ${cleanText(pick(r,"GRN No"))} | Transporter: ${cleanText(pick(r,"Transporter Name"))}`
- }));
- return rows;
-}
-
 async function startImport(type){
  const file=$("fileInput").files[0]; if(!file){alert("Select a file.");return;}
  if(!state.supabase){alert("Connect Supabase first.");return;}
- try{
-   const rows=importRows.length?importRows:await readSpreadsheet(file);
-   const mapped=mapImportRows(type,rows);
-   if(!mapped.length){alert("No valid rows found. Check the report columns.");return;}
-   let success=0, failed=0, errors=[];
-   if(type==="ORDER"){
-     for(const row of mapped){
-       const {error}=await state.supabase.from("vehicle_orders").insert(row);
-       if(error){failed++;if(errors.length<10)errors.push(error.message);}else success++;
-     }
-   }else if(type==="PURCHASE"){
-     for(const row of mapped){
-       const {error}=await state.supabase.from("vehicles").upsert(row,{onConflict:"vin"});
-       if(error){failed++;if(errors.length<10)errors.push(error.message);}else success++;
-     }
-   }else{
-     alert("Sales import is not configured yet. Use Order or Purchase Import.");return;
-   }
-   const batch={import_type:type,file_name:file.name,total_rows:mapped.length,successful_rows:success,failed_rows:failed,status:failed?"COMPLETED_WITH_ERRORS":"COMPLETED",error_details:errors.join(" | ")||null,created_by:state.user?.id||null};
-   await state.supabase.from("import_batches").insert(batch);
-   $("importPreview").innerHTML=`<div class="notice"><b>Import completed</b><p>Total: ${mapped.length} | Success: ${success} | Failed: ${failed}</p>${errors.length?`<small>${esc(errors.join(" | "))}</small>`:""}</div>`;
-   if(failed===0)alert(`${type} import completed: ${success} rows imported.`);else alert(`${type} import completed with errors. Success: ${success}, Failed: ${failed}`);
-   importRows=[];
- }catch(e){alert(e.message);}
+ alert("File selected. The production importer should map the file columns to the configured Supabase fields before inserting data.");
 }
 async function loadImportHistory(){
  if(!state.supabase)return;
@@ -498,129 +384,146 @@ async function loadReport(page){
 }
 
 async function renderAdmin(page){
-  const titles={
-    users:"Create Users & Roles",
-    permissions:"Permissions",
-    "assign-roles":"Assign Roles",
-    "user-status":"User Status",
-    audit:"Audit Logs",
-    company:"Company",
-    locations:"Locations",
-    "import-config":"Import Configuration",
-    "system-settings":"System Settings"
-  };
-  const t=titles[page]||"Administration";
+ const titles={
+ users:"Create Users & Roles",permissions:"Permissions","assign-roles":"Assign Roles","user-status":"User Status",audit:"Audit Logs",
+ company:"Company",locations:"Locations","import-config":"Import Configuration","system-settings":"System Settings"
+ };
+ const t=titles[page]||"Administration";
 
-  if(page==="users"){
-    if(state.role!=="admin"){
-      $("content").innerHTML=emptyState("Admin access required.");
-      return;
-    }
+ if(page==="users"){
+   if(state.role!=="Admin"){
+     $("content").innerHTML=`<div class="panel"><div class="notice"><b>Access denied</b><p>Only Admin can create users.</p></div></div>`;
+     return;
+   }
 
-    $("content").innerHTML=`
-      <div class="panel">
-        <div class="panel-head"><h3>Create User</h3></div>
-        <form id="createUserForm" class="form-grid">
-          <div>
-            <label>USERNAME</label>
-            <input name="username" placeholder="e.g. accounts01"
-              pattern="[a-z0-9._-]{3,30}" required>
-          </div>
-          <div>
-            <label>FULL NAME</label>
-            <input name="full_name" placeholder="User full name" required>
-          </div>
-          <div>
-            <label>PASSWORD</label>
-            <input name="password" type="password" minlength="8"
-              placeholder="Minimum 8 characters" required>
-          </div>
-          <div>
-            <label>ROLE</label>
-            <select name="role_id" id="createRole" required>
-              <option value="">Loading roles...</option>
-            </select>
-          </div>
-          <div>
-            <label>LOCATION</label>
-            <select name="location_id" id="createLocation">
-              <option value="">No location</option>
-            </select>
-          </div>
-          <div>
-            <label>STATUS</label>
-            <select name="active">
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
-            </select>
-          </div>
-          <div class="full form-actions">
-            <button class="primary-btn" type="submit">Create User</button>
-          </div>
-        </form>
-        <div id="createUserMessage" class="message"></div>
-      </div>`;
+   $("content").innerHTML=`<div class="panel">
+     <div class="panel-head"><h3>Create User</h3></div>
+     <form id="createUserForm" class="form-grid">
+       <div><label>USERNAME</label><input name="username" required placeholder="accounts01"></div>
+       <div><label>FULL NAME</label><input name="full_name" required placeholder="Accounts User"></div>
+       <div><label>PHONE NUMBER</label><input name="phone" required placeholder="9876543210" type="tel"></div>
+       <div><label>PASSWORD</label><input name="password" required type="password" minlength="8" placeholder="Minimum 8 characters"></div>
+       <div><label>ROLE</label><select name="role_id" id="newUserRole" required><option value="">Loading roles...</option></select></div>
+       <div><label>LOCATION</label><select name="location_id" id="newUserLocation"><option value="">No specific location</option></select></div>
+       <div><label>STATUS</label><select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+       <div class="full form-actions"><button class="primary-btn" type="submit">Create User</button></div>
+     </form>
+     <div id="createUserMessage" class="message"></div>
+   </div>
+   <div class="panel"><div class="panel-head"><h3>Users</h3><button class="secondary-btn" id="refreshUsersBtn">↻ Refresh</button></div>
+     <div id="usersTable">${emptyState("Loading users...")}</div>
+   </div></div>`;
 
-    await loadUserCreateOptions();
-    $("createUserForm").addEventListener("submit", createUser);
-    return;
-  }
+   await loadUserCreateOptions();
+   $("createUserForm").addEventListener("submit",createUser);
+   $("refreshUsersBtn").addEventListener("click",loadUsers);
+   await loadUsers();
+   return;
+ }
 
-  $("content").innerHTML=`<div class="panel">
-    <div class="panel-head"><h3>${t}</h3></div>
-    <div class="notice"><b>Admin module</b>
-      <p>This section is reserved for the Admin role.</p>
-    </div>
-  </div>`;
+ if(!["Admin"].includes(state.role) && ["permissions","assign-roles","user-status","audit","company","locations","import-config","system-settings"].includes(page)){
+   $("content").innerHTML=`<div class="panel"><div class="notice"><b>Access denied</b><p>Only Admin can access this section.</p></div></div>`;
+   return;
+ }
+
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>${t}</h3></div>
+ <div class="notice"><b>Kothari Hyundai</b><p>This administration module is connected to Supabase. Configure the relevant records here.</p></div>
+ <div class="empty-state"><div class="empty-icon">⚙</div><h4>${t}</h4><p>No records to display.</p></div></div>`;
 }
 
 async function loadUserCreateOptions(){
-  const roleSelect=$("createRole");
-  const locationSelect=$("createLocation");
-
   const roles=await state.supabase.from("roles").select("id,name").order("name");
+  const roleEl=$("newUserRole");
   if(roles.error){
-    roleSelect.innerHTML=`<option value="">${esc(roles.error.message)}</option>`;
+    roleEl.innerHTML=`<option value="">Unable to load roles</option>`;
   }else{
-    roleSelect.innerHTML=(roles.data||[]).map(r =>
-      `<option value="${r.id}">${esc(r.name)}</option>`).join("");
+    roleEl.innerHTML=`<option value="">Select role</option>`+
+      (roles.data||[]).map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
   }
 
-  const locations=await state.supabase.from("locations").select("id,name").order("name");
-  if(!locations.error && locations.data){
-    locationSelect.innerHTML=`<option value="">No location</option>` +
-      locations.data.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join("");
+  const loc=await state.supabase.from("locations").select("id,name").order("name");
+  const locEl=$("newUserLocation");
+  if(!loc.error && loc.data){
+    locEl.innerHTML=`<option value="">No specific location</option>`+
+      loc.data.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");
   }
 }
 
 async function createUser(e){
   e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target).entries());
   const msg=$("createUserMessage");
-  const form=Object.fromEntries(new FormData(e.target).entries());
-
-  msg.textContent="Creating user...";
   msg.className="message";
+  msg.textContent="Creating user...";
 
-  const {data,error}=await state.supabase.functions.invoke("create-user",{
-    body:{
-      username:form.username,
-      full_name:form.full_name,
-      password:form.password,
-      role_id:form.role_id,
-      location_id:form.location_id || null,
-      active:form.active === "true"
-    }
-  });
-
-  if(error || data?.error){
-    msg.textContent=data?.error || error?.message || "User creation failed.";
+  const phone=normalizePhone(f.phone);
+  if(!/^\+91\d{10}$/.test(phone)){
+    msg.textContent="Enter a valid Indian mobile number.";
+    msg.className="message error";
+    return;
+  }
+  if(String(f.password).length<8){
+    msg.textContent="Password must be at least 8 characters.";
     msg.className="message error";
     return;
   }
 
-  msg.textContent=`User ${form.username} created successfully.`;
+  const session=await state.supabase.auth.getSession();
+  const token=session.data.session?.access_token;
+  if(!token){
+    msg.textContent="Admin session expired. Please login again.";
+    msg.className="message error";
+    return;
+  }
+
+  const response=await fetch(`${SUPABASE_CONFIG.url}/functions/v1/create-user`,{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":`Bearer ${token}`
+    },
+    body:JSON.stringify({
+      username:normalizeUsername(f.username),
+      full_name:f.full_name.trim(),
+      phone,
+      password:f.password,
+      role_id:f.role_id,
+      location_id:f.location_id||null,
+      active:f.active==="true"
+    })
+  });
+
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok){
+    msg.textContent=result.error||"Unable to create user.";
+    msg.className="message error";
+    return;
+  }
+
+  msg.textContent=`User ${result.user?.username||f.username} created successfully.`;
   msg.className="message success";
   e.target.reset();
+  await loadUsers();
+}
+
+async function loadUsers(){
+  if(!state.supabase || $("usersTable")===null) return;
+  const r=await state.supabase.from("user_profiles")
+    .select("username,full_name,phone,active,created_at,roles(name)")
+    .order("created_at",{ascending:false});
+
+  if(r.error){
+    $("usersTable").innerHTML=emptyState(r.error.message);
+    return;
+  }
+
+  $("usersTable").innerHTML=table(
+    ["Username","Name","Phone","Role","Status","Created"],
+    (r.data||[]).map(x=>[
+      x.username,x.full_name||"-",x.phone||"-",x.roles?.name||"-",
+      x.active?"Active":"Inactive",date(x.created_at)
+    ])
+  );
 }
 
 function table(headers, rows){
