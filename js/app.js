@@ -1,0 +1,666 @@
+const MENU = [
+  {section:"MAIN", items:[["dashboard","Dashboard","▦"]]},
+  {section:"VEHICLE MANAGEMENT", items:[
+    ["vehicles","Vehicle Stock","▤"],["search","Search by Chassis / VIN","⌕"],
+    ["status","Current Status","◉"],["timeline","View Timeline","◷"]
+  ]},
+  {section:"DATA IMPORT", items:[
+    ["order-import","Order Report Import","⇧"],["purchase-import","Purchase Report Import","⇧"],
+    ["sales-import","Sales Report Import","⇧"],["import-history","Import History","≡"]
+  ]},
+  {section:"GATE MANAGEMENT", items:[
+    ["bhilarwadi","Bhilarwadi In / Out","⇄"],["gate","Vehicle In / Out","⇄"],
+    ["bulk-gate","Bulk Vehicle In / Out","⇄"],["gate-pass","Gate Pass","▣"],["register","In-Out Register","☷"]
+  ]},
+  {section:"DELIVERY", items:[
+    ["delivery-entry","Delivery Entry","✓"],["delivered","Delivered Vehicles","✓"],["delivery-history","Delivery History","◷"]
+  ]},
+  {section:"REPORTS", items:[
+    ["location-report","Location Stock","▥"],["model-report","Model Stock","▥"],
+    ["finance-report","Finance-wise Stock","₹"],["aging-report","Aging Report","◴"],
+    ["delivery-report","Delivery Report","✓"],["pending-report","Pending Order Report","!"],
+    ["transit-report","In Transit Report","→"],["gate-report","Gate Movement Report","⇄"],
+    ["dealer-report","Dealer Code-wise Stock","▥"]
+  ]},
+  {section:"ADMINISTRATION", items:[
+    ["users","Create Users & Roles","♙"],["permissions","Permissions","⚿"],
+    ["assign-roles","Assign Roles","↔"],["user-status","User Status","●"],["audit","Audit Logs","⌁"]
+  ]},
+  {section:"SETTINGS", items:[
+    ["company","Company","⌂"],["locations","Locations","⌖"],
+    ["import-config","Import Configuration","⚙"],["system-settings","System Settings","⚙"]
+  ]}
+];
+
+const state = {page:"dashboard", user:null, profile:null, role:"", supabase:null, connected:false};
+
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+
+function supabaseReady() {
+  return window.SUPABASE_CONFIG &&
+    !window.SUPABASE_CONFIG.url.startsWith("YOUR_") &&
+    !window.SUPABASE_CONFIG.anonKey.startsWith("YOUR_") &&
+    window.supabase;
+}
+
+async function init() {
+  renderNav();
+  if (supabaseReady()) {
+    state.supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+    state.connected = true;
+    setConnection(true);
+    const {data:{session}} = await state.supabase.auth.getSession();
+    if (session) showApp(session.user);
+    state.supabase.auth.onAuthStateChange((_event, session) => session ? showApp(session.user) : showLogin());
+  } else {
+    setConnection(false);
+  }
+  $("loginForm").addEventListener("submit", login);
+  if(typeof bindAuthUI === "function") bindAuthUI();
+  $("logoutBtn").addEventListener("click", logout);
+  $("refreshBtn").addEventListener("click", () => loadPage(state.page));
+  $("mobileMenu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
+}
+
+function setConnection(ok) {
+  $("connectionDot").className = "dot " + (ok ? "online" : "offline");
+  $("connectionText").textContent = ok ? "Supabase connected" : "Supabase not configured";
+}
+
+function renderNav() {
+  $("nav").innerHTML = MENU.map((group,index) => {
+    if(group.section === "MAIN") return `<div class="nav-group main-direct"><button class="nav-item main-dashboard" data-page="dashboard" type="button"><span>▦</span><span>Dashboard</span></button></div>`;
+    return `<div class="nav-group ${index===1 ? "open" : ""}">
+      <button type="button" class="nav-label nav-group-toggle">${group.section}<span class="nav-arrow">⌄</span></button>
+      <div class="nav-submenu">${group.items.map(([id,label,icon]) => `<button class="nav-item" data-page="${id}" type="button"><span>${icon}</span><span>${label}</span></button>`).join("")}</div>
+    </div>`;
+  }).join("");
+  document.querySelectorAll(".nav-group-toggle").forEach(t=>t.addEventListener("click",()=>{
+    const g=t.closest(".nav-group"); document.querySelectorAll(".nav-group").forEach(x=>{if(x!==g)x.classList.remove("open")}); g.classList.toggle("open");
+  }));
+  document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
+    state.page=b.dataset.page; loadPage(state.page);
+  }));
+}
+
+async function login(e) {
+  e.preventDefault();
+  const username = normalizeUsername($("username").value);
+  const password = $("password").value;
+
+  if (!state.supabase) {
+    $("loginMessage").textContent = "Supabase is not configured. Add your project URL and publishable key in js/config.js.";
+    $("loginMessage").className="message error";
+    return;
+  }
+  if (!username || !password) {
+    $("loginMessage").textContent = "Enter username and password.";
+    $("loginMessage").className="message error";
+    return;
+  }
+
+  $("loginMessage").textContent="Signing in...";
+  $("loginMessage").className="message";
+
+  const email = usernameToAuthEmail(username);
+  if(!email){ $("loginMessage").textContent="Invalid username or password."; $("loginMessage").className="message error"; return; }
+  const {data,error}=await state.supabase.auth.signInWithPassword({email,password});
+
+  if(error){
+    $("loginMessage").textContent="Invalid username or password.";
+    $("loginMessage").className="message error";
+    return;
+  }
+  showApp(data.user);
+}
+
+async function logout(){
+  if(state.supabase) await state.supabase.auth.signOut();
+  showLogin();
+}
+
+function showLogin(){
+  $("loginView").classList.remove("hidden");
+  const resetView = $("resetView");
+  if (resetView) resetView.classList.add("hidden");
+  $("appView").classList.add("hidden");
+}
+
+async function showApp(user){
+  state.user=user;
+  $("loginView").classList.add("hidden");
+  const resetView = $("resetView");
+  if (resetView) resetView.classList.add("hidden");
+  $("appView").classList.remove("hidden");
+
+  let displayName = user.user_metadata?.username || user.user_metadata?.full_name || "User";
+  try {
+    const p=await state.supabase.from("user_profiles")
+      .select("username,full_name,active,roles(name)")
+      .eq("id",user.id).maybeSingle();
+
+    if(p.error) console.warn(p.error.message);
+    if(p.data){
+      if(p.data.active === false){
+        await state.supabase.auth.signOut();
+        $("loginMessage").textContent="This user is inactive. Contact Admin.";
+        $("loginMessage").className="message error";
+        showLogin();
+        return;
+      }
+      displayName=p.data.full_name || p.data.username || displayName;
+      state.profile=p.data;
+      state.role=p.data.roles?.name || "";
+    }
+  } catch(err) {
+    console.warn(err);
+  }
+
+  $("userName").textContent=displayName;
+  loadPage("dashboard");
+}
+
+function navActive(){document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.page===state.page));}
+
+function normalizeUsername(v){
+  return String(v||"").trim().toLowerCase().replace(/\s+/g,"");
+}
+
+function normalizePhone(v){
+  let p=String(v||"").replace(/[^\d+]/g,"");
+  if(p.startsWith("0") && p.length===11) p="+91"+p.slice(1);
+  if(/^\d{10}$/.test(p)) p="+91"+p;
+  if(p.startsWith("91") && p.length===12) p="+"+p;
+  return p;
+}
+
+function usernameToAuthEmail(username){
+  return normalizeUsername(username) === "admin" ? "shubhamdamajighar6987@gmail.com" : "";
+}
+
+async function startPasswordReset(){
+  const username=normalizeUsername($("resetUsername").value);
+
+  if(!state.supabase){setResetMessage("Supabase is not configured.","error");return;}
+  if(!username){setResetMessage("Enter your username.","error");return;}
+
+  $("sendOtpBtn").disabled=true;
+  setResetMessage("Checking account and sending OTP to the registered mobile...","");
+
+  try {
+    const response=await fetch(`${SUPABASE_CONFIG.url}/functions/v1/send-reset-otp`,{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "apikey":SUPABASE_CONFIG.anonKey
+      },
+      body:JSON.stringify({username})
+    });
+
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok){
+      setResetMessage(result.error||"Unable to send OTP.","error");
+      $("sendOtpBtn").disabled=false;
+      return;
+    }
+
+    $("resetStep1").classList.add("hidden");
+    $("resetStep2").classList.remove("hidden");
+    setResetMessage("OTP sent to the registered mobile number.","success");
+  } catch(err) {
+    setResetMessage("Unable to connect to password reset service.","error");
+  } finally {
+    $("sendOtpBtn").disabled=false;
+  }
+}
+
+async function completePasswordReset(){
+  const username=normalizeUsername($("resetUsername").value);
+  const token=$("resetOtp").value.trim();
+  const password=$("resetPassword").value;
+  const confirm=$("resetPasswordConfirm").value;
+
+  if(!username || !token || !password || !confirm){
+    setResetMessage("Enter username, OTP and new password.","error"); return;
+  }
+  if(password.length<8){
+    setResetMessage("Password must be at least 8 characters.","error"); return;
+  }
+  if(password!==confirm){
+    setResetMessage("Passwords do not match.","error"); return;
+  }
+
+  $("resetPasswordBtn").disabled=true;
+  setResetMessage("Verifying OTP and updating password...","");
+
+  try {
+    const response=await fetch(`${SUPABASE_CONFIG.url}/functions/v1/reset-password-with-otp`,{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "apikey":SUPABASE_CONFIG.anonKey
+      },
+      body:JSON.stringify({username,token,password})
+    });
+
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok){
+      setResetMessage(result.error||"Invalid OTP or unable to reset password.","error");
+      return;
+    }
+
+    $("resetStep2").classList.add("hidden");
+    $("resetStep1").classList.remove("hidden");
+    $("resetOtp").value="";
+    $("resetPassword").value="";
+    $("resetPasswordConfirm").value="";
+    $("resetUsername").value="";
+    setResetMessage("Password reset successfully. You can now login with your username and new password.","success");
+    setTimeout(showLogin,1500);
+  } catch(err) {
+    setResetMessage("Unable to connect to password reset service.","error");
+  } finally {
+    $("resetPasswordBtn").disabled=false;
+  }
+}
+
+function setResetMessage(text,type){
+  $("resetMessage").textContent=text;
+  $("resetMessage").className="message"+(type?" "+type:"");
+}
+
+function openReset(){
+  $("loginView").classList.add("hidden");
+  $("appView").classList.add("hidden");
+  $("resetView").classList.remove("hidden");
+  $("resetMessage").textContent="";
+}
+
+function bindAuthUI(){
+  if($("forgotPasswordBtn")) $("forgotPasswordBtn").addEventListener("click",openReset);
+  if($("backToLoginBtn")) $("backToLoginBtn").addEventListener("click",showLogin);
+  if($("sendOtpBtn")) $("sendOtpBtn").addEventListener("click",startPasswordReset);
+  if($("resetPasswordBtn")) $("resetPasswordBtn").addEventListener("click",completePasswordReset);
+}
+
+async function loadPage(page) {
+  navActive();
+  const item = MENU.flatMap(x=>x.items).find(x=>x[0]===page);
+  $("pageTitle").textContent=item?.[1] || "Dashboard";
+  $("pageSubtitle").textContent = "Hyundai Vehicle Inventory System";
+  if(page==="dashboard") return renderDashboard();
+  if(page==="vehicles"||page==="search"||page==="status") return renderVehicles(page);
+  if(page==="timeline") return renderTimeline();
+  if(page.includes("import")) return renderImport(page);
+  if(["bhilarwadi","gate","bulk-gate","gate-pass","register"].includes(page)) return renderGate(page);
+  if(page.includes("delivery")) return renderDelivery(page);
+  if(page.includes("report")) return renderReport(page);
+  return renderAdmin(page);
+}
+
+function renderDashboard(){
+  $("content").innerHTML=`
+  <div class="cards">
+    ${["Total Order Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map((x,i)=>`
+      <button type="button" class="stat-card stock-card" data-stock-filter="${x}"><div class="stat-title">${x}</div><div class="stat-value" id="stat${i}">0</div><div class="stat-note">Live Supabase data</div></button>`).join("")}
+  </div>
+  <div class="grid-2">
+    <div class="panel"><div class="panel-head"><h3>Location Stock</h3><button class="secondary-btn" onclick="loadPage('location-report')">View Report</button></div><div id="locationTable" class="table-wrap">${emptyState("No live location data available.")}</div></div>
+    <div class="panel"><div class="panel-head"><h3>Recent Gate Movement</h3><button class="secondary-btn" onclick="loadPage('gate-report')">View Report</button></div><div id="gateTable" class="table-wrap">${emptyState("No gate movements available.")}</div></div>
+  </div>
+  <div class="panel"><div class="panel-head"><h3>Quick Actions</h3></div><div class="quick-actions">
+    <button onclick="loadPage('vehicles')">+ Vehicle Stock</button><button onclick="loadPage('order-import')">Import Order</button>
+    <button onclick="loadPage('gate')">Gate In / Out</button><button onclick="loadPage('delivery-entry')">Delivery Entry</button>
+    <button onclick="loadPage('search')">Search VIN</button>
+  </div></div>`;
+  if(!state.supabase) return;
+  document.querySelectorAll(".stock-card").forEach(c=>c.addEventListener("click",()=>openStockFilter(c.dataset.stockFilter)));
+  loadDashboardData();
+}
+
+async function loadDashboardData(){
+  try{
+    const {data,error}=await state.supabase.from("dashboard_stock_summary").select("*").single();
+    if(error) throw error;
+    const vals=[data.total_stock,data.available_stock,data.in_transit,data.pending_order,data.bill_not_delivered,data.delivered];
+    vals.forEach((v,i)=>$("stat"+i).textContent=Number(v||0).toLocaleString("en-IN"));
+    const loc=await state.supabase.from("location_stock_report").select("*").order("vehicle_count",{ascending:false});
+    $("locationTable").innerHTML=table(["Location","Vehicles","Stock Value"],(loc.data||[]).map(r=>[r.location_name,r.vehicle_count, money(r.stock_value)]));
+    const gate=await state.supabase.from("gate_movement_report").select("*").order("movement_time",{ascending:false}).limit(8);
+    $("gateTable").innerHTML=table(["Date","Type","VIN","Location"],(gate.data||[]).map(r=>[date(r.movement_time),r.movement_type,r.vin,r.to_location||r.from_location||"-"]));
+  }catch(e){console.error(e);}
+}
+
+async function renderVehicles(page){
+  const title=page==="search"?"Search Vehicle":"Vehicle Stock";
+  $("content").innerHTML=`
+  <div class="toolbar"><div class="searchbox"><input id="vehicleSearch" placeholder="Search VIN / chassis / model / color"><button onclick="queryVehicles()">Search</button></div></div>
+  <div class="quick-actions stock-filters">${["Total Order Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map(x=>`<button type="button" data-filter="${x}">${x}</button>`).join("")}</div>
+  <div class="panel"><div class="table-wrap" id="vehicleResults">${emptyState("Enter a search or load live vehicle stock.")}</div></div>
+  <div id="modal"></div>`;
+  document.querySelectorAll(".stock-filters button").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".stock-filters button").forEach(x=>x.classList.remove("active"));b.classList.add("active");window.vehicleStockFilter=b.dataset.filter;queryVehicles();}));
+  window.vehicleStockFilter=window.vehicleStockFilter||"Total Order Stock";
+  if(page!=="search") queryVehicles();
+}
+async function queryVehicles(){
+  const q=($("vehicleSearch")?.value||"").trim();
+  if(!state.supabase){$("vehicleResults").innerHTML=emptyState("Connect Supabase to load live vehicles.");return;}
+  let query=state.supabase.from("vehicles").select("id,vin,chassis_no,model,variant,color,location_id,status,finance_company,stock_value,purchase_date").order("created_at",{ascending:false}).limit(100);
+  if(q) query=query.or(`vin.ilike.%${q}%,chassis_no.ilike.%${q}%,model.ilike.%${q}%,color.ilike.%${q}%`);
+  const f=window.vehicleStockFilter||"Total Order Stock";
+  const statusMap={"Available Stock":"AVAILABLE","In Transit":"IN TRANSIT","Pending Order":"PENDING ORDER","Bill / Not Delivered":"BILL / NOT DELIVERED","Delivered":"DELIVERED"};
+  if(statusMap[f]) query=query.eq("status",statusMap[f]);
+  const {data,error}=await query;
+  $("vehicleResults").innerHTML=error?emptyState(error.message):table(["VIN","Chassis","Model","Variant","Color","Status","Value"],(data||[]).map(v=>[`<b>${esc(v.vin)}</b>`,esc(v.chassis_no),esc(v.model),esc(v.variant),esc(v.color),`<span class="badge">${esc(v.status)}</span>`,money(v.stock_value)]));
+}
+function openVehicleForm(){
+ $("modal").innerHTML=`<div class="modal-bg"><div class="modal"><div class="panel-head"><h3>Add Vehicle</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+ <form id="vehicleForm" class="form-grid">
+ ${["vin","chassis_no","engine_no","model","variant","color","fuel_type","transmission","order_no","dealer_code","finance_company"].map(x=>`<div><label>${x.replaceAll("_"," ").toUpperCase()}</label><input name="${x}" required="${x==="vin"}></div>`).join("")}
+ <div><label>STOCK VALUE</label><input name="stock_value" type="number" step="0.01"></div>
+ <div class="full"><label>REMARKS</label><textarea name="remarks"></textarea></div>
+ <div class="full form-actions"><button type="button" class="secondary-btn" onclick="closeModal()">Cancel</button><button class="primary-btn">Save Vehicle</button></div></form></div></div>`;
+ $("vehicleForm").addEventListener("submit",saveVehicle);
+}
+async function saveVehicle(e){
+ e.preventDefault(); if(!state.supabase){alert("Connect Supabase first.");return;}
+ const obj=Object.fromEntries(new FormData(e.target).entries()); obj.stock_value=Number(obj.stock_value||0);
+ const {error}=await state.supabase.from("vehicles").insert(obj);
+ if(error) alert(error.message); else {closeModal();queryVehicles();}
+}
+function closeModal(){$("modal").innerHTML="";}
+
+function renderTimeline(){
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Vehicle Timeline</h3><div class="searchbox"><input id="timelineVin" placeholder="Enter VIN"><button onclick="loadTimeline()">Search</button></div></div><div id="timelineResults">${emptyState("Search a VIN to view its read-only timeline.")}</div></div>`;
+}
+async function loadTimeline(){
+ const vin=$("timelineVin").value.trim(); if(!vin||!state.supabase)return;
+ const v=await state.supabase.from("vehicles").select("id,vin").eq("vin",vin).maybeSingle();
+ if(!v.data){$("timelineResults").innerHTML=emptyState("Vehicle not found.");return;}
+ const r=await state.supabase.from("vehicle_timeline").select("*").eq("vehicle_id",v.data.id).order("created_at",{ascending:false});
+ $("timelineResults").innerHTML=(r.data||[]).map(x=>`<div class="timeline"><div class="time">${date(x.created_at)}</div><div><b>${esc(x.event_type)}</b><p>${esc(x.description||"")}</p><small>${esc(x.old_status||"")} → ${esc(x.new_status||"")}</small></div></div>`).join("")||emptyState("No timeline events.");
+}
+
+function renderImport(page){
+ const type=page.startsWith("order")?"ORDER":page.startsWith("purchase")?"PURCHASE":page.startsWith("sales")?"SALES":null;
+ $("content").innerHTML= type ? `<div class="panel import-panel"><h3>${type} Report Import</h3><p>Upload Excel/CSV, validate columns, preview rows, then import into Supabase.</p><div class="dropzone"><input id="fileInput" type="file" accept=".csv,.xlsx,.xls"><div>Choose CSV / Excel file</div></div><div id="importPreview"></div><button class="primary-btn" onclick="startImport('${type}')">Validate & Import</button></div>` : `<div class="panel"><h3>Import History</h3><div id="importHistory">${emptyState("No import history available.")}</div></div>`;
+ if(!type) loadImportHistory();
+}
+async function startImport(type){
+ const file=$("fileInput").files[0]; if(!file){alert("Select a file.");return;}
+ if(!state.supabase){alert("Connect Supabase first.");return;}
+ alert("File selected. The production importer should map the file columns to the configured Supabase fields before inserting data.");
+}
+async function loadImportHistory(){
+ if(!state.supabase)return;
+ const r=await state.supabase.from("import_batches").select("*").order("created_at",{ascending:false}).limit(100);
+ $("importHistory").innerHTML=table(["Date","Type","File","Rows","Success","Failed","Status"],(r.data||[]).map(x=>[date(x.created_at),x.import_type,x.file_name,x.total_rows,x.successful_rows,x.failed_rows,x.status]));
+}
+
+function renderGate(page){
+ const title={bhilarwadi:"Bhilarwadi In / Out",gate:"Vehicle In / Out","bulk-gate":"Bulk Vehicle In / Out","gate-pass":"Gate Pass",register:"In-Out Register"}[page];
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>${title}</h3>${page==="register"?`<button class="secondary-btn" onclick="loadGateRegister()">Refresh</button>`:""}</div>
+ ${page==="register"?`<div id="gateRegister">${emptyState("No live gate movements.")}</div>`:`<form id="gateForm" class="form-grid">
+ <div><label>VIN</label><input name="vin" required></div><div><label>MOVEMENT</label><select name="movement_type"><option>IN</option><option>OUT</option></select></div>
+ <div><label>REASON</label><select name="movement_reason"><option>PURCHASE</option><option>DELIVERY</option><option>TRANSFER</option><option>TEST_DRIVE</option><option>OTHER</option></select></div>
+ <div><label>GATE NAME</label><input name="gate_name"></div><div><label>DRIVER NAME</label><input name="driver_name"></div><div><label>DRIVER MOBILE</label><input name="driver_mobile"></div>
+ <div class="full"><label>REMARKS</label><textarea name="remarks"></textarea></div><div class="full form-actions"><button class="primary-btn">Save Gate Movement</button></div></form>`}</div>`;
+ if(page==="register")loadGateRegister(); else $("gateForm").addEventListener("submit",saveGate);
+}
+async function saveGate(e){
+ e.preventDefault(); if(!state.supabase){alert("Connect Supabase first.");return;}
+ const f=Object.fromEntries(new FormData(e.target).entries());
+ const v=await state.supabase.from("vehicles").select("id").eq("vin",f.vin).maybeSingle();
+ if(!v.data){alert("VIN not found.");return;}
+ f.vehicle_id=v.data.id;
+ delete f.vin;
+ const {error}=await state.supabase.from("gate_movements").insert(f);
+ if(error)alert(error.message);else{e.target.reset();alert("Gate movement saved.");}
+}
+async function loadGateRegister(){
+ if(!state.supabase)return;
+ const r=await state.supabase.from("gate_movement_report").select("*").order("movement_time",{ascending:false}).limit(200);
+ $("gateRegister").innerHTML=table(["Date","Type","Reason","VIN","From","To","Gate","Pass"],(r.data||[]).map(x=>[date(x.movement_time),x.movement_type,x.movement_reason,x.vin,x.from_location||"-",x.to_location||"-",x.gate_name||"-",x.gate_pass_no||"-"]));
+}
+
+function renderDelivery(page){
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>${page==="delivery-entry"?"Delivery Entry":page==="delivered"?"Delivered Vehicles":"Delivery History"}</h3></div>
+ ${page==="delivery-entry"?`<form id="deliveryForm" class="form-grid">
+ <div><label>VIN</label><input name="vin" required></div><div><label>DELIVERY NO</label><input name="delivery_no" required></div>
+ <div><label>CUSTOMER NAME</label><input name="customer_name"></div><div><label>CUSTOMER MOBILE</label><input name="customer_mobile"></div>
+ <div><label>FINANCE COMPANY</label><input name="finance_company"></div><div><label>DELIVERY DATE</label><input name="delivery_date" type="date"></div>
+ <div class="full"><label>REMARKS</label><textarea name="remarks"></textarea></div><div class="full form-actions"><button class="primary-btn">Complete Delivery</button></div></form>`:`<div id="deliveryResults">${emptyState("No live delivery data available.")}</div>`}</div>`;
+ if(page!=="delivery-entry")loadDeliveries();
+ else $("deliveryForm").addEventListener("submit",saveDelivery);
+}
+async function saveDelivery(e){
+ e.preventDefault(); if(!state.supabase){alert("Connect Supabase first.");return;}
+ const f=Object.fromEntries(new FormData(e.target).entries());
+ const v=await state.supabase.from("vehicles").select("id").eq("vin",f.vin).maybeSingle();
+ if(!v.data){alert("VIN not found.");return;}
+ const vehicleId=v.data.id; delete f.vin; f.vehicle_id=vehicleId;
+ const {error}=await state.supabase.from("deliveries").insert(f);
+ if(error){alert(error.message);return;}
+ const up=await state.supabase.from("vehicles").update({status:"DELIVERED",delivery_date:f.delivery_date||new Date().toISOString().slice(0,10)}).eq("id",vehicleId);
+ if(up.error)alert(up.error.message);else{e.target.reset();alert("Delivery completed.");}
+}
+async function loadDeliveries(){
+ if(!state.supabase)return;
+ const r=await state.supabase.from("delivery_report").select("*").order("delivery_date",{ascending:false}).limit(200);
+ $("deliveryResults").innerHTML=table(["Delivery No","Date","VIN","Model","Customer","Finance","Location"],(r.data||[]).map(x=>[x.delivery_no,date(x.delivery_date),x.vin,x.model,x.customer_name,x.finance_company||"-",x.location_name||"-"]));
+}
+
+function renderReport(page){
+ const map={
+ "location-report":["Location Stock","location_stock_report",["Location","Vehicles","Stock Value"],r=>[r.location_name,r.vehicle_count,money(r.stock_value)]],
+ "model-report":["Model Stock","model_stock_report",["Model","Vehicles","Stock Value"],r=>[r.model,r.vehicle_count,money(r.stock_value)]],
+ "finance-report":["Finance-wise Stock","finance_stock_report",["Finance","Vehicles","Stock Value"],r=>[r.finance_company,r.vehicle_count,money(r.stock_value)]],
+ "aging-report":["Aging Report","aging_report",["VIN","Model","Status","Purchase Date","Aging Days","Bucket"],r=>[r.vin,r.model,r.status,date(r.purchase_date),r.aging_days,r.aging_bucket]],
+ "delivery-report":["Delivery Report","delivery_report",["Delivery No","Date","VIN","Model","Customer","Finance"],r=>[r.delivery_no,date(r.delivery_date),r.vin,r.model,r.customer_name,r.finance_company||"-"]],
+ "pending-report":["Pending Order Report","pending_order_report",["Order No","Date","Model","Variant","Qty","Expected","Status"],r=>[r.order_no,date(r.order_date),r.model,r.variant,r.quantity,date(r.expected_date),r.status]],
+ "transit-report":["In Transit Report","in_transit_report",["VIN","Model","Variant","Status","Value"],r=>[r.vin,r.model,r.variant,r.status,money(r.stock_value)]],
+ "gate-report":["Gate Movement Report","gate_movement_report",["Date","Type","VIN","From","To","Gate"],r=>[date(r.movement_time),r.movement_type,r.vin,r.from_location||"-",r.to_location||"-",r.gate_name||"-"]],
+ "dealer-report":["Dealer Code-wise Stock","dealer_code_stock_report",["Dealer Code","Vehicles","Stock Value"],r=>[r.dealer_code,r.vehicle_count,money(r.stock_value)]]
+ };
+ const m=map[page]; $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>${m?m[0]:"Report"}</h3><button class="secondary-btn" onclick="loadReport('${page}')">↻ Refresh</button></div><div id="reportTable">${emptyState("Loading live report...")}</div></div>`;
+ loadReport(page);
+}
+async function loadReport(page){
+ const map={
+ "location-report":["location_stock_report",["Location","Vehicles","Stock Value"],r=>[r.location_name,r.vehicle_count,money(r.stock_value)]],
+ "model-report":["model_stock_report",["Model","Vehicles","Stock Value"],r=>[r.model,r.vehicle_count,money(r.stock_value)]],
+ "finance-report":["finance_stock_report",["Finance","Vehicles","Stock Value"],r=>[r.finance_company,r.vehicle_count,money(r.stock_value)]],
+ "aging-report":["aging_report",["VIN","Model","Status","Purchase Date","Aging Days","Bucket"],r=>[r.vin,r.model,r.status,date(r.purchase_date),r.aging_days,r.aging_bucket]],
+ "delivery-report":["delivery_report",["Delivery No","Date","VIN","Model","Customer","Finance"],r=>[r.delivery_no,date(r.delivery_date),r.vin,r.model,r.customer_name,r.finance_company||"-"]],
+ "pending-report":["pending_order_report",["Order No","Date","Model","Variant","Qty","Expected","Status"],r=>[r.order_no,date(r.order_date),r.model,r.variant,r.quantity,date(r.expected_date),r.status]],
+ "transit-report":["in_transit_report",["VIN","Model","Variant","Status","Value"],r=>[r.vin,r.model,r.variant,r.status,money(r.stock_value)]],
+ "gate-report":["gate_movement_report",["Date","Type","VIN","From","To","Gate"],r=>[date(r.movement_time),r.movement_type,r.vin,r.from_location||"-",r.to_location||"-",r.gate_name||"-"]],
+ "dealer-report":["dealer_code_stock_report",["Dealer Code","Vehicles","Stock Value"],r=>[r.dealer_code,r.vehicle_count,money(r.stock_value)]]
+ };
+ const m=map[page]; if(!m)return;
+ if(!state.supabase){$("reportTable").innerHTML=emptyState("Connect Supabase to load live report.");return;}
+ const r=await state.supabase.from(m[0]).select("*").limit(1000);
+ $("reportTable").innerHTML=r.error?emptyState(r.error.message):table(m[1],(r.data||[]).map(m[2]));
+}
+
+async function renderAdmin(page){
+  if(state.role!=="Admin"){ $("content").innerHTML=`<div class="panel"><div class="notice"><b>Access denied</b><p>Only Admin can access this section.</p></div></div>`; return; }
+  if(page==="users") return renderUsersAdmin();
+  if(page==="permissions") return renderPermissionsAdmin();
+  if(page==="assign-roles") return renderAssignRolesAdmin();
+  if(page==="user-status") return renderUserStatusAdmin();
+  if(page==="audit") return renderAuditAdmin();
+  if(page==="company") return renderCompanySettings();
+  if(page==="locations") return renderLocationsSettings();
+  if(page==="import-config") return renderImportSettings();
+  if(page==="system-settings") return renderSystemSettings();
+}
+
+async function renderUsersAdmin(){
+  $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Create User</h3></div>
+  <form id="createUserForm" class="form-grid">
+    <div><label>USERNAME</label><input name="username" required></div>
+    <div><label>FULL NAME</label><input name="full_name" required></div>
+    <div><label>PASSWORD</label><input name="password" required type="password" minlength="8"></div>
+    <div><label>ROLE</label><select name="role_id" id="newUserRole" required><option>Loading...</option></select></div>
+    <div><label>LOCATION</label><select name="location_id" id="newUserLocation" required><option>Loading...</option></select></div>
+    <div><label>STATUS</label><select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+    <div class="full form-actions"><button class="primary-btn">Create User</button></div>
+  </form><div id="createUserMessage" class="message"></div></div>
+  <div class="panel"><div class="panel-head"><h3>Users</h3><button class="secondary-btn" id="refreshUsersBtn">↻ Refresh</button></div><div id="usersTable">${emptyState("Loading users...")}</div></div>`;
+  await loadUserCreateOptions(); $("createUserForm").addEventListener("submit",createUser); $("refreshUsersBtn").addEventListener("click",loadUsers); await loadUsers();
+}
+
+async function renderPermissionsAdmin(){
+  const roles=await state.supabase.from("roles").select("id,name,description").order("name");
+  $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Permissions</h3><button class="secondary-btn" onclick="renderPermissionsAdmin()">↻ Refresh</button></div><div id="permissionBody">${emptyState("Loading permissions...")}</div></div>`;
+  if(roles.error){$("permissionBody").innerHTML=emptyState(roles.error.message);return;}
+  const p=await state.supabase.from("permissions").select("id,code,name,description").order("name");
+  if(p.error){$("permissionBody").innerHTML=emptyState("Permissions table not available. Run ADMIN_FEATURES.sql.");return;}
+  const rp=await state.supabase.from("role_permissions").select("role_id,permission_id"); const map=new Set((rp.data||[]).map(x=>x.role_id+":"+x.permission_id));
+  $("permissionBody").innerHTML=(roles.data||[]).map(r=>`<div class="panel" style="margin:10px 0"><b>${esc(r.name)}</b><div class="form-grid" style="margin-top:10px">${(p.data||[]).map(x=>`<label><input type="checkbox" data-rp-role="${r.id}" data-rp-perm="${x.id}" ${map.has(r.id+":"+x.id)?"checked":""}> ${esc(x.name||x.code)}</label>`).join("")}</div><button class="primary-btn" style="margin-top:10px" onclick="saveRolePermissions('${r.id}')">Save ${esc(r.name)}</button></div>`).join("");
+}
+async function saveRolePermissions(roleId){
+  const ids=[...document.querySelectorAll(`[data-rp-role="${roleId}"]:checked`)].map(x=>x.dataset.rpPerm);
+  await state.supabase.from("role_permissions").delete().eq("role_id",roleId);
+  if(ids.length) await state.supabase.from("role_permissions").insert(ids.map(permission_id=>({role_id:roleId,permission_id})));
+  alert("Permissions saved.");
+}
+
+async function renderAssignRolesAdmin(){
+  const r=await state.supabase.from("user_profiles").select("id,username,full_name,active,location_id,roles(name),locations(location_name,location_code)").order("created_at",{ascending:false});
+  const roles=await state.supabase.from("roles").select("id,name").order("name");
+  const loc=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
+  $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Assign Roles</h3></div><div class="table-wrap">${table(["User","Current Role","Location","New Role","New Location","Action"],(r.data||[]).map(u=>[u.username,u.roles?.name||"-",u.locations?.location_name||"All Locations",`<select id="role-${u.id}">${(roles.data||[]).map(x=>`<option value="${x.id}" ${x.id===u.role_id?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`,`<select id="loc-${u.id}"><option value="ALL">All Locations</option>${(loc.data||[]).filter(x=>x.active!==false).map(x=>`<option value="${x.id}" ${x.id===u.location_id?"selected":""}>${esc(x.location_name)}</option>`).join("")}</select>`,`<button class="primary-btn" onclick="saveUserAssignment('${u.id}')">Save</button>`]))}</div></div>`;
+}
+async function saveUserAssignment(id){ const role_id=$("role-"+id).value; const lv=$("loc-"+id).value; const {error}=await state.supabase.from("user_profiles").update({role_id,location_id:lv==="ALL"?null:lv}).eq("id",id); if(error)alert(error.message);else alert("Role and location updated."); }
+
+async function renderUserStatusAdmin(){
+ const r=await state.supabase.from("user_profiles").select("id,username,full_name,active,locations(location_name),roles(name)").order("created_at",{ascending:false});
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>User Status</h3></div>${table(["Username","Name","Role","Location","Status","Action"],(r.data||[]).map(u=>[u.username,u.full_name||"-",u.roles?.name||"-",u.locations?.location_name||"All Locations",u.active?"Active":"Inactive",`<button class="secondary-btn" onclick="toggleUserStatus('${u.id}',${!u.active})">${u.active?"Deactivate":"Activate"}</button>`]))}</div>`;
+}
+async function toggleUserStatus(id,active){const {error}=await state.supabase.from("user_profiles").update({active}).eq("id",id);if(error)alert(error.message);else renderUserStatusAdmin();}
+
+async function renderAuditAdmin(){
+ const r=await state.supabase.from("audit_logs").select("*").order("created_at",{ascending:false}).limit(300);
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Audit Logs</h3></div>${r.error?emptyState("Audit logs table not available. Run ADMIN_FEATURES.sql."):table(["Date","Action","Module","Details","User"],(r.data||[]).map(x=>[date(x.created_at),x.action||"-",x.module||x.entity_type||"-",x.details||x.description||"-",x.actor_username||x.actor_id||"-"]))}</div>`;
+}
+
+async function renderCompanySettings(){
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Company</h3></div><form id="companyForm" class="form-grid"><div><label>Company Name</label><input name="company_name" value="Kothari Cars Pvt Ltd"></div><div><label>Brand</label><input name="brand" value="Kothari Hyundai"></div><div><label>GSTIN</label><input name="gstin"></div><div><label>Address</label><input name="address"></div><div class="full form-actions"><button class="primary-btn">Save Company</button></div></form><div id="companyMsg" class="message"></div></div>`;
+ $("companyForm").addEventListener("submit",saveCompanySettings);
+}
+async function saveCompanySettings(e){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const {error}=await state.supabase.from("company_settings").upsert({id:1,...d},{onConflict:"id"});$("companyMsg").textContent=error?error.message:"Company settings saved.";$("companyMsg").className="message "+(error?"error":"success");}
+
+async function renderLocationsSettings(){
+ const r=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Locations</h3><button class="secondary-btn" onclick="renderLocationsSettings()">↻ Refresh</button></div>${r.error?emptyState(r.error.message):table(["Location","Code","Status"],(r.data||[]).map(x=>[x.location_name,x.location_code||"-",x.active?"Active":"Inactive"]))}</div>`;
+}
+
+async function renderImportSettings(){
+ const r=await state.supabase.from("import_configuration").select("*").order("created_at",{ascending:false});
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Import Configuration</h3></div>${r.error?emptyState("Import configuration table not available. Run ADMIN_FEATURES.sql."):table(["Import Type","Target Table","Active","Updated"],(r.data||[]).map(x=>[x.import_type,x.target_table,x.active?"Yes":"No",date(x.updated_at)]))}</div>`;
+}
+
+async function renderSystemSettings(){
+ const r=await state.supabase.from("system_settings").select("*").order("setting_key");
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>System Settings</h3></div>${r.error?emptyState("System settings table not available. Run ADMIN_FEATURES.sql."):table(["Setting","Value","Description","Updated"],(r.data||[]).map(x=>[x.setting_key,x.setting_value||"",x.description||"",date(x.updated_at)]))}</div>`;
+}
+
+function openStockFilter(filter){ state.page="vehicles"; loadPage("vehicles"); setTimeout(()=>{ const sel=$("stockFilter"); if(sel){ sel.value=filter; queryVehicles(); } },50); }
+async function loadUserCreateOptions(){
+  const roles=await state.supabase.from("roles").select("id,name").order("name");
+  const roleEl=$("newUserRole");
+  if(roles.error) roleEl.innerHTML=`<option value="">Unable to load roles</option>`;
+  else roleEl.innerHTML=`<option value="">Select role</option>`+(roles.data||[]).map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
+
+  const loc=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
+  const locEl=$("newUserLocation");
+  if(loc.error){
+    locEl.innerHTML=`<option value="">Unable to load locations</option>`;
+    return;
+  }
+  locEl.innerHTML=`<option value="ALL">All Locations</option>`+(loc.data||[]).filter(x=>x.active!==false).map(x=>`<option value="${x.id}">${esc(x.location_name)}${x.location_code?` (${esc(x.location_code)})`:""}</option>`).join("");
+}
+
+async function createUser(e){
+  e.preventDefault();
+  const f=Object.fromEntries(new FormData(e.target).entries());
+  const msg=$("createUserMessage");
+  msg.className="message";
+  msg.textContent="Creating user...";
+
+  if(String(f.password).length<8){
+    msg.textContent="Password must be at least 8 characters.";
+    msg.className="message error";
+    return;
+  }
+
+  const session=await state.supabase.auth.getSession();
+  const token=session.data.session?.access_token;
+  if(!token){
+    msg.textContent="Admin session expired. Please login again.";
+    msg.className="message error";
+    return;
+  }
+
+  const response=await fetch(`${SUPABASE_CONFIG.url}/functions/v1/create-user`,{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":`Bearer ${token}`
+    },
+    body:JSON.stringify({
+      username:normalizeUsername(f.username),
+      full_name:f.full_name.trim(),
+      password:f.password,
+      role_id:f.role_id,
+      location_id:f.location_id && f.location_id !== "ALL" ? f.location_id : null,
+      active:f.active==="true"
+    })
+  });
+
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok){
+    msg.textContent=result.error||"Unable to create user.";
+    msg.className="message error";
+    return;
+  }
+
+  msg.textContent=`User ${result.user?.username||f.username} created successfully.`;
+  msg.className="message success";
+  e.target.reset();
+  await loadUsers();
+}
+
+async function loadUsers(){
+  if(!state.supabase || $("usersTable")===null) return;
+  const r=await state.supabase.from("user_profiles")
+    .select("username,full_name,active,created_at,roles(name),location_id")
+    .order("created_at",{ascending:false});
+
+  if(r.error){
+    $("usersTable").innerHTML=emptyState(r.error.message);
+    return;
+  }
+
+  $("usersTable").innerHTML=table(
+    ["Username","Name","Role","Location","Status","Created"],
+    (r.data||[]).map(x=>[
+      x.username,x.full_name||"-",x.roles?.name||"-",x.location_id||"All Locations",
+      x.active?"Active":"Inactive",date(x.created_at)
+    ])
+  );
+}
+
+function table(headers, rows){
+ if(!rows.length)return emptyState("No records found.");
+ return `<table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${escHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+function escHtml(v){return typeof v==="string" && v.includes("<") ? v : esc(v);}
+function emptyState(text){return `<div class="empty-state"><div class="empty-icon">⌁</div><p>${esc(text)}</p></div>`;}
+function money(v){return "₹ "+Number(v||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function date(v){return v?new Date(v).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}):"-";}
+
+document.addEventListener("DOMContentLoaded",init);
