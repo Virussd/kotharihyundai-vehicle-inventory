@@ -1,5 +1,5 @@
 const MENU = [
-  {section:"MAIN", items:[["dashboard","Dashboard","▦"]]},
+  {section:"MAIN", items:[["dashboard","Dashboard","▦"]], collapsible:false},
   {section:"VEHICLE MANAGEMENT", items:[
     ["vehicles","Vehicle Stock","▤"],["search","Search by Chassis / VIN","⌕"],
     ["status","Current Status","◉"],["timeline","View Timeline","◷"]
@@ -16,10 +16,9 @@ const MENU = [
     ["delivery-entry","Delivery Entry","✓"],["delivered","Delivered Vehicles","✓"],["delivery-history","Delivery History","◷"]
   ]},
   {section:"REPORTS", items:[
-    ["location-report","Location Stock","▥"],["model-report","Model Stock","▥"],
-    ["finance-report","Finance-wise Stock","₹"],["aging-report","Aging Report","◴"],
-    ["delivery-report","Delivery Report","✓"],["pending-report","Pending Order Report","!"],
-    ["transit-report","In Transit Report","→"],["gate-report","Gate Movement Report","⇄"],
+    ["dashboard-report","Dashboard Report","▥"],["location-report","Location Stock","▥"],["model-report","Model Stock","▥"],
+    ["finance-report","Finance-wise Stock","₹"],["aging-report","Aging Report","◴"],["delivery-report","Delivery Report","✓"],
+    ["pending-report","Pending Order Report","!"],["transit-report","In Transit Report","→"],["gate-report","Gate Movement Report","⇄"],
     ["dealer-report","Dealer Code-wise Stock","▥"]
   ]},
   {section:"ADMINISTRATION", items:[
@@ -57,10 +56,7 @@ async function init() {
     setConnection(false);
   }
   $("loginForm").addEventListener("submit", login);
-<<<<<<< HEAD
-  if(typeof bindAuthUI === "function") bindAuthUI();
-=======
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
+  bindAuthUI();
   $("logoutBtn").addEventListener("click", logout);
   $("refreshBtn").addEventListener("click", () => loadPage(state.page));
   $("mobileMenu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
@@ -72,27 +68,39 @@ function setConnection(ok) {
 }
 
 function renderNav() {
-<<<<<<< HEAD
-  $("nav").innerHTML = MENU.map((group,index) => {
-    if(group.section === "MAIN") return `<div class="nav-group main-direct"><button class="nav-item main-dashboard" data-page="dashboard" type="button"><span>▦</span><span>Dashboard</span></button></div>`;
-    return `<div class="nav-group ${index===1 ? "open" : ""}">
-      <button type="button" class="nav-label nav-group-toggle">${group.section}<span class="nav-arrow">⌄</span></button>
-      <div class="nav-submenu">${group.items.map(([id,label,icon]) => `<button class="nav-item" data-page="${id}" type="button"><span>${icon}</span><span>${label}</span></button>`).join("")}</div>
+  $("nav").innerHTML = MENU.map((group, gi) => {
+    const key = `nav-open-${gi}`;
+    const collapsible = group.collapsible !== false;
+    return `<div class="nav-group ${collapsible ? "nav-collapsible" : ""}" data-nav-group="${key}">
+      <button class="nav-label nav-label-btn" type="button" data-nav-toggle="${key}" ${collapsible ? "" : "disabled"}>
+        <span>${group.section}</span>${collapsible ? '<span class="nav-chevron">⌄</span>' : ''}
+      </button>
+      <div class="nav-submenu" data-nav-submenu="${key}">
+        ${group.items.map(([id,label,icon]) => `<button class="nav-item" data-page="${id}"><span>${icon}</span><span class="nav-item-text">${label}</span></button>`).join("")}
+      </div>
     </div>`;
   }).join("");
-  document.querySelectorAll(".nav-group-toggle").forEach(t=>t.addEventListener("click",()=>{
-    const g=t.closest(".nav-group"); document.querySelectorAll(".nav-group").forEach(x=>{if(x!==g)x.classList.remove("open")}); g.classList.toggle("open");
-  }));
+
+  document.querySelectorAll("[data-nav-toggle]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.navToggle;
+      const group = document.querySelector(`[data-nav-group="${key}"]`);
+      if (!group) return;
+      group.classList.toggle("collapsed");
+      localStorage.setItem(key, group.classList.contains("collapsed") ? "0" : "1");
+    });
+    const key = btn.dataset.navToggle;
+    const saved = localStorage.getItem(key);
+    const group = document.querySelector(`[data-nav-group="${key}"]`);
+    if (saved === "0") group?.classList.add("collapsed");
+  });
+
   document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
-    state.page=b.dataset.page; loadPage(state.page);
-=======
-  $("nav").innerHTML = MENU.map(group => `
-    <div class="nav-group"><div class="nav-label">${group.section}</div>
-    ${group.items.map(([id,label,icon]) => `<button class="nav-item" data-page="${id}"><span>${icon}</span>${label}</button>`).join("")}
-    </div>`).join("");
-  document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
-    state.page=b.dataset.page; document.querySelector(".sidebar").classList.remove("open"); loadPage(state.page);
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
+    state.page=b.dataset.page;
+    const parent=b.closest(".nav-group");
+    parent?.classList.remove("collapsed");
+    document.querySelector(".sidebar").classList.remove("open");
+    loadPage(state.page);
   }));
 }
 
@@ -102,18 +110,12 @@ async function login(e) {
   const password = $("password").value;
 
   if (!state.supabase) {
-<<<<<<< HEAD
     $("loginMessage").textContent = "Supabase is not configured. Add your project URL and publishable key in js/config.js.";
     $("loginMessage").className="message error";
-=======
-    $("loginMessage").textContent = "Supabase is not configured. Check js/config.js.";
-    $("loginMessage").className = "message error";
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
     return;
   }
   if (!username || !password) {
     $("loginMessage").textContent = "Enter username and password.";
-<<<<<<< HEAD
     $("loginMessage").className="message error";
     return;
   }
@@ -122,7 +124,6 @@ async function login(e) {
   $("loginMessage").className="message";
 
   const email = usernameToAuthEmail(username);
-  if(!email){ $("loginMessage").textContent="Invalid username or password."; $("loginMessage").className="message error"; return; }
   const {data,error}=await state.supabase.auth.signInWithPassword({email,password});
 
   if(error){
@@ -131,33 +132,6 @@ async function login(e) {
     return;
   }
   showApp(data.user);
-=======
-    $("loginMessage").className = "message error";
-    return;
-  }
-
-  // Production login: only admin2 is enabled for the current setup.
-  if (username !== "admin2") {
-    $("loginMessage").textContent = "Invalid username or password.";
-    $("loginMessage").className = "message error";
-    return;
-  }
-
-  $("loginMessage").textContent = "Signing in...";
-  $("loginMessage").className = "message";
-
-  const email = "shubhamdamajighar6987@gmail.com";
-  const { data, error } = await state.supabase.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    console.error("Supabase login error:", error);
-    $("loginMessage").textContent = "Invalid username or password.";
-    $("loginMessage").className = "message error";
-    return;
-  }
-
-  await showApp(data.user);
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
 }
 
 async function logout(){
@@ -167,25 +141,17 @@ async function logout(){
 
 function showLogin(){
   $("loginView").classList.remove("hidden");
-<<<<<<< HEAD
-  const resetView = $("resetView");
-  if (resetView) resetView.classList.add("hidden");
-=======
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
+  if ($("resetView")) $("resetView").classList.add("hidden");
   $("appView").classList.add("hidden");
 }
 
 async function showApp(user){
   state.user=user;
   $("loginView").classList.add("hidden");
-<<<<<<< HEAD
-  const resetView = $("resetView");
-  if (resetView) resetView.classList.add("hidden");
-=======
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
+  if ($("resetView")) $("resetView").classList.add("hidden");
   $("appView").classList.remove("hidden");
 
-  let displayName = user.user_metadata?.username || user.user_metadata?.full_name || "User";
+  let displayName = user.user_metadata?.full_name || user.user_metadata?.username || (user.email === "shubhamdamajighar6987@gmail.com" ? "Administrator" : "User");
   try {
     const p=await state.supabase.from("user_profiles")
       .select("username,full_name,active,roles(name)")
@@ -227,8 +193,15 @@ function normalizePhone(v){
 }
 
 function usernameToAuthEmail(username){
-<<<<<<< HEAD
-  return normalizeUsername(username) === "admin" ? "shubhamdamajighar6987@gmail.com" : "";
+  const u = normalizeUsername(username);
+
+  // Current Kothari Hyundai Admin Auth account
+  if (u === "admin") {
+    return "shubhamdamajighar6987@gmail.com";
+  }
+
+  // Users created through the Create User Edge Function
+  return `${u}@login.kotharihyundai.local`;
 }
 
 async function startPasswordReset(){
@@ -334,11 +307,6 @@ function bindAuthUI(){
   if($("backToLoginBtn")) $("backToLoginBtn").addEventListener("click",showLogin);
   if($("sendOtpBtn")) $("sendOtpBtn").addEventListener("click",startPasswordReset);
   if($("resetPasswordBtn")) $("resetPasswordBtn").addEventListener("click",completePasswordReset);
-=======
-  return normalizeUsername(username) === "admin2"
-    ? "shubhamdamajighar6987@gmail.com"
-    : "";
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
 }
 
 async function loadPage(page) {
@@ -358,61 +326,177 @@ async function loadPage(page) {
 
 function renderDashboard(){
   $("content").innerHTML=`
-  <div class="cards">
-<<<<<<< HEAD
-    ${["Total Order Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map((x,i)=>`
-      <button type="button" class="stat-card stock-card" data-stock-filter="${x}"><div class="stat-title">${x}</div><div class="stat-value" id="stat${i}">0</div><div class="stat-note">Live Supabase data</div></button>`).join("")}
-=======
-    ${["Total Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map((x,i)=>`
-      <div class="stat-card"><div class="stat-title">${x}</div><div class="stat-value" id="stat${i}">0</div><div class="stat-note">Live Supabase data</div></div>`).join("")}
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
+  <div class="cards dashboard-cards">
+    ${[["Total Order Stock","stat0"],["Available Stock","stat1"],["In Transit","stat2"],["Pending Order","stat3"],["Bill / Not Delivered","stat4"],["Delivered","stat5"]].map(([x,id])=>`
+      <button class="stat-card stat-card-button" onclick="loadPage('dashboard-report')">
+        <div class="stat-title">${x}</div><div class="stat-value" id="${id}">0</div><div class="stat-note">Live Supabase data • Click for report</div>
+      </button>`).join("")}
   </div>
   <div class="grid-2">
-    <div class="panel"><div class="panel-head"><h3>Location Stock</h3><button class="secondary-btn" onclick="loadPage('location-report')">View Report</button></div><div id="locationTable" class="table-wrap">${emptyState("No live location data available.")}</div></div>
-    <div class="panel"><div class="panel-head"><h3>Recent Gate Movement</h3><button class="secondary-btn" onclick="loadPage('gate-report')">View Report</button></div><div id="gateTable" class="table-wrap">${emptyState("No gate movements available.")}</div></div>
+    <div class="panel"><div class="panel-head"><h3>Available Stock – Finance-wise</h3><button class="secondary-btn" onclick="loadPage('finance-report')">View Report</button></div><div id="financeDash" class="table-wrap">${emptyState("Loading...")}</div></div>
+    <div class="panel"><div class="panel-head"><h3>Available Stock – Dealer Code-wise</h3><button class="secondary-btn" onclick="loadPage('dealer-report')">View Report</button></div><div id="dealerDash" class="table-wrap">${emptyState("Loading...")}</div></div>
   </div>
-  <div class="panel"><div class="panel-head"><h3>Quick Actions</h3></div><div class="quick-actions">
-    <button onclick="loadPage('vehicles')">+ Vehicle Stock</button><button onclick="loadPage('order-import')">Import Order</button>
-    <button onclick="loadPage('gate')">Gate In / Out</button><button onclick="loadPage('delivery-entry')">Delivery Entry</button>
-    <button onclick="loadPage('search')">Search VIN</button>
-  </div></div>`;
-  if(!state.supabase) return;
-<<<<<<< HEAD
-  document.querySelectorAll(".stock-card").forEach(c=>c.addEventListener("click",()=>openStockFilter(c.dataset.stockFilter)));
-=======
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
-  loadDashboardData();
+  <div class="grid-2">
+    <div class="panel"><div class="panel-head"><h3>Status-wise Stock</h3><button class="secondary-btn" onclick="loadPage('dashboard-report')">View Report</button></div><div id="statusDash" class="status-summary">${emptyState("Loading...")}</div></div>
+    <div class="panel"><div class="panel-head"><h3>Recent Vehicle Movements</h3><button class="secondary-btn" onclick="loadPage('gate-report')">View All</button></div><div id="gateTable" class="table-wrap">${emptyState("Loading...")}</div></div>
+  </div>
+  <div class="panel"><div class="panel-head"><h3>Location-wise Stock & Value</h3><button class="secondary-btn" onclick="loadPage('location-report')">View Report</button></div><div id="locationTable" class="table-wrap">${emptyState("Loading...")}</div></div>
+  <div class="panel"><div class="panel-head"><h3>Model-wise Stock & Value</h3><button class="secondary-btn" onclick="loadPage('model-report')">View Report</button></div><div id="modelDash" class="table-wrap">${emptyState("Loading...")}</div></div>`;
+  if(state.supabase) loadDashboardData();
 }
 
 async function loadDashboardData(){
-  try{
-    const {data,error}=await state.supabase.from("dashboard_stock_summary").select("*").single();
-    if(error) throw error;
-    const vals=[data.total_stock,data.available_stock,data.in_transit,data.pending_order,data.bill_not_delivered,data.delivered];
-    vals.forEach((v,i)=>$("stat"+i).textContent=Number(v||0).toLocaleString("en-IN"));
-    const loc=await state.supabase.from("location_stock_report").select("*").order("vehicle_count",{ascending:false});
-    $("locationTable").innerHTML=table(["Location","Vehicles","Stock Value"],(loc.data||[]).map(r=>[r.location_name,r.vehicle_count, money(r.stock_value)]));
-    const gate=await state.supabase.from("gate_movement_report").select("*").order("movement_time",{ascending:false}).limit(8);
-    $("gateTable").innerHTML=table(["Date","Type","VIN","Location"],(gate.data||[]).map(r=>[date(r.movement_time),r.movement_type,r.vin,r.to_location||r.from_location||"-"]));
-  }catch(e){console.error(e);}
+  const sb=state.supabase;
+  if(!sb)return;
+
+  // Dashboard summary. If the optional summary view is unavailable,
+  // calculate the six cards directly from vehicles so the dashboard
+  // does not break.
+  const summary=await sb.from("dashboard_stock_summary").select("*").maybeSingle();
+  if(!summary.error && summary.data){
+    const d=summary.data;
+    const values=[
+      d.total_order_stock ?? d.total_stock ?? 0,
+      d.available_stock ?? 0,
+      d.in_transit ?? 0,
+      d.pending_order ?? 0,
+      d.bill_not_delivered ?? 0,
+      d.delivered ?? 0
+    ];
+    values.forEach((v,i)=>{
+      const el=$("stat"+i);
+      if(el)el.textContent=Number(v||0).toLocaleString("en-IN");
+    });
+  } else {
+    const fallback=await sb.from("vehicles")
+      .select("status,stock_value")
+      .limit(10000);
+
+    if(!fallback.error){
+      const rows=fallback.data||[];
+      const norm=v=>String(v||"").trim().toUpperCase().replace(/\s+/g,"_");
+      const isAvailable=v=>["AVAILABLE","IN_STOCK","STOCK"].includes(norm(v));
+      const isTransit=v=>["IN_TRANSIT","IN-TRANSIT","TRANSIT"].includes(norm(v));
+      const isPending=v=>["PENDING_ORDER","PENDING","ORDER_PENDING"].includes(norm(v));
+      const isBill=v=>["BILL_NOT_DELIVERED","BILLED_NOT_DELIVERED","BILL_NOT_DELIVERED_"].includes(norm(v));
+      const isDelivered=v=>["DELIVERED","DELIVERY"].includes(norm(v));
+
+      const counts=[
+        rows.length,
+        rows.filter(v=>isAvailable(v.status)).length,
+        rows.filter(v=>isTransit(v.status)).length,
+        rows.filter(v=>isPending(v.status)).length,
+        rows.filter(v=>isBill(v.status)).length,
+        rows.filter(v=>isDelivered(v.status)).length
+      ];
+      counts.forEach((v,i)=>{
+        const el=$("stat"+i);
+        if(el)el.textContent=Number(v||0).toLocaleString("en-IN");
+      });
+    }
+  }
+
+  const [loc,fin,dealer,model,gate]=await Promise.all([
+    sb.from("location_stock_report").select("*").order("vehicle_count",{ascending:false}).limit(100),
+    sb.from("finance_stock_report").select("*").order("vehicle_count",{ascending:false}).limit(100),
+    sb.from("dealer_code_stock_report").select("*").order("vehicle_count",{ascending:false}).limit(100),
+    sb.from("model_stock_report").select("*").order("vehicle_count",{ascending:false}).limit(100),
+    sb.from("gate_movement_report").select("*").order("movement_time",{ascending:false}).limit(8)
+  ]);
+
+  if($("locationTable")){
+    $("locationTable").innerHTML=loc.error
+      ? emptyState(friendlyDbError(loc.error))
+      : table(["Location","Vehicles","Stock Value"],(loc.data||[]).map(r=>[
+          r.location_name,r.vehicle_count,money(r.stock_value)
+        ]));
+  }
+
+  if($("financeDash")){
+    $("financeDash").innerHTML=fin.error
+      ? emptyState(friendlyDbError(fin.error))
+      : table(["Finance","Vehicles","Stock Value"],(fin.data||[]).map(r=>[
+          r.finance_company||"Not Financed",r.vehicle_count,money(r.stock_value)
+        ]));
+  }
+
+  if($("dealerDash")){
+    $("dealerDash").innerHTML=dealer.error
+      ? emptyState(friendlyDbError(dealer.error))
+      : table(["Dealer Code","Vehicles","Stock Value"],(dealer.data||[]).map(r=>[
+          r.dealer_code||"-",r.vehicle_count,money(r.stock_value)
+        ]));
+  }
+
+  if($("modelDash")){
+    $("modelDash").innerHTML=model.error
+      ? emptyState(friendlyDbError(model.error))
+      : table(["Model","Vehicles","Stock Value"],(model.data||[]).map(r=>[
+          r.model||"-",r.vehicle_count,money(r.stock_value)
+        ]));
+  }
+
+  if($("gateTable")){
+    $("gateTable").innerHTML=gate.error
+      ? emptyState(friendlyDbError(gate.error))
+      : table(["Date","Type","VIN","Location"],(gate.data||[]).map(r=>[
+          date(r.movement_time),r.movement_type,r.vin,
+          r.to_location||r.from_location||"-"
+        ]));
+  }
+
+  // Status-wise summary. Works directly from vehicles even when the
+  // optional report view is unavailable.
+  const vr=await sb.from("vehicles").select("status,stock_value").limit(10000);
+  if($("statusDash")){
+    if(vr.error){
+      $("statusDash").innerHTML=emptyState(friendlyDbError(vr.error));
+    }else{
+      const groups={};
+      (vr.data||[]).forEach(v=>{
+        const k=String(v.status||"UNKNOWN").trim()||"UNKNOWN";
+        groups[k]??={count:0,value:0};
+        groups[k].count++;
+        groups[k].value+=Number(v.stock_value||0);
+      });
+
+      const entries=Object.entries(groups).sort((a,b)=>b[1].count-a[1].count);
+      const total=Math.max((vr.data||[]).length,1);
+
+      $("statusDash").innerHTML=entries.length
+        ? `<div class="status-pie-list">${entries.map(([k,v])=>{
+            const pct=Math.round((v.count/total)*100);
+            return `<button class="status-pie-row" onclick="loadPage('status')">
+              <span class="status-dot"></span>
+              <span class="status-name">${esc(k)}</span>
+              <span class="status-bar"><i style="width:${pct}%"></i></span>
+              <b>${v.count.toLocaleString("en-IN")}</b>
+              <span>${money(v.value)}</span>
+            </button>`;
+          }).join("")}</div>`
+        : emptyState("No stock data available.");
+    }
+  }
+}
+
+function friendlyDbError(result){
+  const msg=String(result?.message||"Unable to load data.");
+  if(/permission denied/i.test(msg)){
+    return "Database permission denied. Run KOTHARI_PERMISSION_FIX.sql in Supabase SQL Editor.";
+  }
+  if(/does not exist/i.test(msg)){
+    return "This report/view is not configured yet. Dashboard vehicle data can still be used.";
+  }
+  return msg;
 }
 
 async function renderVehicles(page){
   const title=page==="search"?"Search Vehicle":"Vehicle Stock";
   $("content").innerHTML=`
-<<<<<<< HEAD
-  <div class="toolbar"><div class="searchbox"><input id="vehicleSearch" placeholder="Search VIN / chassis / model / color"><button onclick="queryVehicles()">Search</button></div></div>
-  <div class="quick-actions stock-filters">${["Total Order Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map(x=>`<button type="button" data-filter="${x}">${x}</button>`).join("")}</div>
-  <div class="panel"><div class="table-wrap" id="vehicleResults">${emptyState("Enter a search or load live vehicle stock.")}</div></div>
-  <div id="modal"></div>`;
-  document.querySelectorAll(".stock-filters button").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".stock-filters button").forEach(x=>x.classList.remove("active"));b.classList.add("active");window.vehicleStockFilter=b.dataset.filter;queryVehicles();}));
-  window.vehicleStockFilter=window.vehicleStockFilter||"Total Order Stock";
-=======
   <div class="toolbar"><div class="searchbox"><input id="vehicleSearch" placeholder="Search VIN / chassis / model / color"><button onclick="queryVehicles()">Search</button></div>
   <button class="primary-btn" onclick="openVehicleForm()">+ Add Vehicle</button></div>
   <div class="panel"><div class="table-wrap" id="vehicleResults">${emptyState("Enter a search or load live vehicle stock.")}</div></div>
   <div id="modal"></div>`;
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   if(page!=="search") queryVehicles();
 }
 async function queryVehicles(){
@@ -420,12 +504,6 @@ async function queryVehicles(){
   if(!state.supabase){$("vehicleResults").innerHTML=emptyState("Connect Supabase to load live vehicles.");return;}
   let query=state.supabase.from("vehicles").select("id,vin,chassis_no,model,variant,color,location_id,status,finance_company,stock_value,purchase_date").order("created_at",{ascending:false}).limit(100);
   if(q) query=query.or(`vin.ilike.%${q}%,chassis_no.ilike.%${q}%,model.ilike.%${q}%,color.ilike.%${q}%`);
-<<<<<<< HEAD
-  const f=window.vehicleStockFilter||"Total Order Stock";
-  const statusMap={"Available Stock":"AVAILABLE","In Transit":"IN TRANSIT","Pending Order":"PENDING ORDER","Bill / Not Delivered":"BILL / NOT DELIVERED","Delivered":"DELIVERED"};
-  if(statusMap[f]) query=query.eq("status",statusMap[f]);
-=======
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   const {data,error}=await query;
   $("vehicleResults").innerHTML=error?emptyState(error.message):table(["VIN","Chassis","Model","Variant","Color","Status","Value"],(data||[]).map(v=>[`<b>${esc(v.vin)}</b>`,esc(v.chassis_no),esc(v.model),esc(v.variant),esc(v.color),`<span class="badge">${esc(v.status)}</span>`,money(v.stock_value)]));
 }
@@ -527,6 +605,7 @@ async function loadDeliveries(){
 }
 
 function renderReport(page){
+ if(page==="dashboard-report") return renderDashboardReport();
  const map={
  "location-report":["Location Stock","location_stock_report",["Location","Vehicles","Stock Value"],r=>[r.location_name,r.vehicle_count,money(r.stock_value)]],
  "model-report":["Model Stock","model_stock_report",["Model","Vehicles","Stock Value"],r=>[r.model,r.vehicle_count,money(r.stock_value)]],
@@ -559,106 +638,57 @@ async function loadReport(page){
  $("reportTable").innerHTML=r.error?emptyState(r.error.message):table(m[1],(r.data||[]).map(m[2]));
 }
 
-async function renderAdmin(page){
-<<<<<<< HEAD
-  if(state.role!=="Admin"){ $("content").innerHTML=`<div class="panel"><div class="notice"><b>Access denied</b><p>Only Admin can access this section.</p></div></div>`; return; }
-  if(page==="users") return renderUsersAdmin();
-  if(page==="permissions") return renderPermissionsAdmin();
-  if(page==="assign-roles") return renderAssignRolesAdmin();
-  if(page==="user-status") return renderUserStatusAdmin();
-  if(page==="audit") return renderAuditAdmin();
-  if(page==="company") return renderCompanySettings();
-  if(page==="locations") return renderLocationsSettings();
-  if(page==="import-config") return renderImportSettings();
-  if(page==="system-settings") return renderSystemSettings();
+function renderDashboardReport(){
+  $("content").innerHTML=`<div class="panel">
+    <div class="panel-head"><div><h3>Dashboard Report</h3><small>All dashboard stock data in one report</small></div><button class="primary-btn" id="exportDashboardExcel">Export to Excel</button></div>
+    <div class="report-filters dashboard-report-filters">
+      <select id="drLocation"><option value="">All Locations</option></select>
+      <select id="drStatus"><option value="">All Status</option></select>
+      <input id="drSearch" placeholder="Search VIN / chassis / model / color">
+      <button class="secondary-btn" id="drApply">Apply Filter</button><button class="secondary-btn" id="drClear">Clear</button>
+    </div>
+    <div id="dashboardReportSummary" class="report-summary"></div>
+    <div id="dashboardReportTable">${emptyState("Loading dashboard report...")}</div>
+  </div>`;
+  loadDashboardReport();
+  $("drApply").onclick=loadDashboardReport;
+  $("drClear").onclick=()=>{ $("drLocation").value=""; $("drStatus").value=""; $("drSearch").value=""; loadDashboardReport(); };
+  $("exportDashboardExcel").onclick=exportDashboardExcel;
 }
 
-async function renderUsersAdmin(){
-  $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Create User</h3></div>
-  <form id="createUserForm" class="form-grid">
-    <div><label>USERNAME</label><input name="username" required></div>
-    <div><label>FULL NAME</label><input name="full_name" required></div>
-    <div><label>PASSWORD</label><input name="password" required type="password" minlength="8"></div>
-    <div><label>ROLE</label><select name="role_id" id="newUserRole" required><option>Loading...</option></select></div>
-    <div><label>LOCATION</label><select name="location_id" id="newUserLocation" required><option>Loading...</option></select></div>
-    <div><label>STATUS</label><select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
-    <div class="full form-actions"><button class="primary-btn">Create User</button></div>
-  </form><div id="createUserMessage" class="message"></div></div>
-  <div class="panel"><div class="panel-head"><h3>Users</h3><button class="secondary-btn" id="refreshUsersBtn">↻ Refresh</button></div><div id="usersTable">${emptyState("Loading users...")}</div></div>`;
-  await loadUserCreateOptions(); $("createUserForm").addEventListener("submit",createUser); $("refreshUsersBtn").addEventListener("click",loadUsers); await loadUsers();
+let dashboardReportRows=[];
+async function loadDashboardReport(){
+  if(!state.supabase){$("dashboardReportTable").innerHTML=emptyState("Connect Supabase to load report.");return;}
+  const q=state.supabase.from("vehicles").select("vin,chassis_no,model,variant,color,status,location_id,finance_company,dealer_code,stock_value,purchase_date").order("created_at",{ascending:false}).limit(10000);
+  const r=await q;
+  if(r.error){$("dashboardReportTable").innerHTML=emptyState(r.error.message);return;}
+  let rows=r.data||[];
+  const search=($('drSearch').value||'').trim().toLowerCase();
+  const status=$('drStatus').value; const location=$('drLocation').value;
+  if(status) rows=rows.filter(x=>(x.status||"")===status);
+  if(location) rows=rows.filter(x=>String(x.location_id||"")===location);
+  if(search) rows=rows.filter(x=>[x.vin,x.chassis_no,x.model,x.variant,x.color].some(v=>String(v||"").toLowerCase().includes(search)));
+  dashboardReportRows=rows;
+  const total=rows.length, value=rows.reduce((a,x)=>a+Number(x.stock_value||0),0);
+  $('dashboardReportSummary').innerHTML=`<div><b>Vehicles</b><strong>${total.toLocaleString("en-IN")}</strong></div><div><b>Stock Value</b><strong>${money(value)}</strong></div>`;
+  $('dashboardReportTable').innerHTML=table(["VIN","Chassis","Model","Variant","Color","Status","Finance","Dealer Code","Stock Value"],rows.map(x=>[x.vin,x.chassis_no,x.model,x.variant,x.color,`<span class="badge">${esc(x.status||"-")}</span>`,x.finance_company||"-",x.dealer_code||"-",money(x.stock_value)]));
+  const locs=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
+  if(locs.data) $('drLocation').innerHTML='<option value="">All Locations</option>'+locs.data.filter(x=>x.active!==false).map(x=>`<option value="${x.id}">${esc(x.location_name)} (${esc(x.location_code||"")})</option>`).join('');
+  const statuses=[...new Set((r.data||[]).map(x=>x.status).filter(Boolean))].sort();
+  $('drStatus').innerHTML='<option value="">All Status</option>'+statuses.map(x=>`<option>${esc(x)}</option>`).join('');
 }
 
-async function renderPermissionsAdmin(){
-  const roles=await state.supabase.from("roles").select("id,name,description").order("name");
-  $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Permissions</h3><button class="secondary-btn" onclick="renderPermissionsAdmin()">↻ Refresh</button></div><div id="permissionBody">${emptyState("Loading permissions...")}</div></div>`;
-  if(roles.error){$("permissionBody").innerHTML=emptyState(roles.error.message);return;}
-  const p=await state.supabase.from("permissions").select("id,code,name,description").order("name");
-  if(p.error){$("permissionBody").innerHTML=emptyState("Permissions table not available. Run ADMIN_FEATURES.sql.");return;}
-  const rp=await state.supabase.from("role_permissions").select("role_id,permission_id"); const map=new Set((rp.data||[]).map(x=>x.role_id+":"+x.permission_id));
-  $("permissionBody").innerHTML=(roles.data||[]).map(r=>`<div class="panel" style="margin:10px 0"><b>${esc(r.name)}</b><div class="form-grid" style="margin-top:10px">${(p.data||[]).map(x=>`<label><input type="checkbox" data-rp-role="${r.id}" data-rp-perm="${x.id}" ${map.has(r.id+":"+x.id)?"checked":""}> ${esc(x.name||x.code)}</label>`).join("")}</div><button class="primary-btn" style="margin-top:10px" onclick="saveRolePermissions('${r.id}')">Save ${esc(r.name)}</button></div>`).join("");
-}
-async function saveRolePermissions(roleId){
-  const ids=[...document.querySelectorAll(`[data-rp-role="${roleId}"]:checked`)].map(x=>x.dataset.rpPerm);
-  await state.supabase.from("role_permissions").delete().eq("role_id",roleId);
-  if(ids.length) await state.supabase.from("role_permissions").insert(ids.map(permission_id=>({role_id:roleId,permission_id})));
-  alert("Permissions saved.");
-}
-
-async function renderAssignRolesAdmin(){
-  const r=await state.supabase.from("user_profiles").select("id,username,full_name,active,location_id,roles(name),locations(location_name,location_code)").order("created_at",{ascending:false});
-  const roles=await state.supabase.from("roles").select("id,name").order("name");
-  const loc=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
-  $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Assign Roles</h3></div><div class="table-wrap">${table(["User","Current Role","Location","New Role","New Location","Action"],(r.data||[]).map(u=>[u.username,u.roles?.name||"-",u.locations?.location_name||"All Locations",`<select id="role-${u.id}">${(roles.data||[]).map(x=>`<option value="${x.id}" ${x.id===u.role_id?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`,`<select id="loc-${u.id}"><option value="ALL">All Locations</option>${(loc.data||[]).filter(x=>x.active!==false).map(x=>`<option value="${x.id}" ${x.id===u.location_id?"selected":""}>${esc(x.location_name)}</option>`).join("")}</select>`,`<button class="primary-btn" onclick="saveUserAssignment('${u.id}')">Save</button>`]))}</div></div>`;
-}
-async function saveUserAssignment(id){ const role_id=$("role-"+id).value; const lv=$("loc-"+id).value; const {error}=await state.supabase.from("user_profiles").update({role_id,location_id:lv==="ALL"?null:lv}).eq("id",id); if(error)alert(error.message);else alert("Role and location updated."); }
-
-async function renderUserStatusAdmin(){
- const r=await state.supabase.from("user_profiles").select("id,username,full_name,active,locations(location_name),roles(name)").order("created_at",{ascending:false});
- $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>User Status</h3></div>${table(["Username","Name","Role","Location","Status","Action"],(r.data||[]).map(u=>[u.username,u.full_name||"-",u.roles?.name||"-",u.locations?.location_name||"All Locations",u.active?"Active":"Inactive",`<button class="secondary-btn" onclick="toggleUserStatus('${u.id}',${!u.active})">${u.active?"Deactivate":"Activate"}</button>`]))}</div>`;
-}
-async function toggleUserStatus(id,active){const {error}=await state.supabase.from("user_profiles").update({active}).eq("id",id);if(error)alert(error.message);else renderUserStatusAdmin();}
-
-async function renderAuditAdmin(){
- const r=await state.supabase.from("audit_logs").select("*").order("created_at",{ascending:false}).limit(300);
- $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Audit Logs</h3></div>${r.error?emptyState("Audit logs table not available. Run ADMIN_FEATURES.sql."):table(["Date","Action","Module","Details","User"],(r.data||[]).map(x=>[date(x.created_at),x.action||"-",x.module||x.entity_type||"-",x.details||x.description||"-",x.actor_username||x.actor_id||"-"]))}</div>`;
-}
-
-async function renderCompanySettings(){
- $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Company</h3></div><form id="companyForm" class="form-grid"><div><label>Company Name</label><input name="company_name" value="Kothari Cars Pvt Ltd"></div><div><label>Brand</label><input name="brand" value="Kothari Hyundai"></div><div><label>GSTIN</label><input name="gstin"></div><div><label>Address</label><input name="address"></div><div class="full form-actions"><button class="primary-btn">Save Company</button></div></form><div id="companyMsg" class="message"></div></div>`;
- $("companyForm").addEventListener("submit",saveCompanySettings);
-}
-async function saveCompanySettings(e){e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const {error}=await state.supabase.from("company_settings").upsert({id:1,...d},{onConflict:"id"});$("companyMsg").textContent=error?error.message:"Company settings saved.";$("companyMsg").className="message "+(error?"error":"success");}
-
-async function renderLocationsSettings(){
- const r=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
- $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Locations</h3><button class="secondary-btn" onclick="renderLocationsSettings()">↻ Refresh</button></div>${r.error?emptyState(r.error.message):table(["Location","Code","Status"],(r.data||[]).map(x=>[x.location_name,x.location_code||"-",x.active?"Active":"Inactive"]))}</div>`;
-}
-
-async function renderImportSettings(){
- const r=await state.supabase.from("import_configuration").select("*").order("created_at",{ascending:false});
- $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>Import Configuration</h3></div>${r.error?emptyState("Import configuration table not available. Run ADMIN_FEATURES.sql."):table(["Import Type","Target Table","Active","Updated"],(r.data||[]).map(x=>[x.import_type,x.target_table,x.active?"Yes":"No",date(x.updated_at)]))}</div>`;
-}
-
-async function renderSystemSettings(){
- const r=await state.supabase.from("system_settings").select("*").order("setting_key");
- $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>System Settings</h3></div>${r.error?emptyState("System settings table not available. Run ADMIN_FEATURES.sql."):table(["Setting","Value","Description","Updated"],(r.data||[]).map(x=>[x.setting_key,x.setting_value||"",x.description||"",date(x.updated_at)]))}</div>`;
-}
-
-function openStockFilter(filter){ state.page="vehicles"; loadPage("vehicles"); setTimeout(()=>{ const sel=$("stockFilter"); if(sel){ sel.value=filter; queryVehicles(); } },50); }
-async function loadUserCreateOptions(){
-  const roles=await state.supabase.from("roles").select("id,name").order("name");
-  const roleEl=$("newUserRole");
-  if(roles.error) roleEl.innerHTML=`<option value="">Unable to load roles</option>`;
-  else roleEl.innerHTML=`<option value="">Select role</option>`+(roles.data||[]).map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
-
-  const loc=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
-  const locEl=$("newUserLocation");
-  if(loc.error){
-    locEl.innerHTML=`<option value="">Unable to load locations</option>`;
-    return;
+function exportDashboardExcel(){
+  if(!dashboardReportRows.length){alert("No data to export.");return;}
+  const rows=dashboardReportRows.map(x=>({VIN:x.vin||"",Chassis:x.chassis_no||"",Model:x.model||"",Variant:x.variant||"",Color:x.color||"",Status:x.status||"",Finance:x.finance_company||"",Dealer_Code:x.dealer_code||"",Stock_Value:Number(x.stock_value||0),Purchase_Date:x.purchase_date||""}));
+  if(window.XLSX){
+    const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Dashboard Report"); XLSX.writeFile(wb,`Kothari_Hyundai_Dashboard_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+  } else {
+    const headers=Object.keys(rows[0]); const csv=[headers.join(","),...rows.map(r=>headers.map(h=>`"${String(r[h]).replaceAll('"','""')}"`).join(","))].join("\n"); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`Kothari_Hyundai_Dashboard_Report_${new Date().toISOString().slice(0,10)}.csv`; a.click();
   }
-  locEl.innerHTML=`<option value="ALL">All Locations</option>`+(loc.data||[]).filter(x=>x.active!==false).map(x=>`<option value="${x.id}">${esc(x.location_name)}${x.location_code?` (${esc(x.location_code)})`:""}</option>`).join("");
-=======
+}
+
+async function renderAdmin(page){
  const titles={
  users:"Create Users & Roles",permissions:"Permissions","assign-roles":"Assign Roles","user-status":"User Status",audit:"Audit Logs",
  company:"Company",locations:"Locations","import-config":"Import Configuration","system-settings":"System Settings"
@@ -676,10 +706,9 @@ async function loadUserCreateOptions(){
      <form id="createUserForm" class="form-grid">
        <div><label>USERNAME</label><input name="username" required placeholder="accounts01"></div>
        <div><label>FULL NAME</label><input name="full_name" required placeholder="Accounts User"></div>
-       <div><label>PHONE NUMBER</label><input name="phone" required placeholder="9876543210" type="tel"></div>
-       <div><label>PASSWORD</label><input name="password" required type="password" minlength="8" placeholder="Minimum 8 characters"></div>
+       <div><label>PASSWORD</label><input name="password" required type="password" minlength="6" maxlength="12" placeholder="6 to 12 characters"></div>
        <div><label>ROLE</label><select name="role_id" id="newUserRole" required><option value="">Loading roles...</option></select></div>
-       <div><label>LOCATION</label><select name="location_id" id="newUserLocation"><option value="">No specific location</option></select></div>
+       <div><label>LOCATION</label><select name="location_id" id="newUserLocation"><option value="">All Locations</option></select></div>
        <div><label>STATUS</label><select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
        <div class="full form-actions"><button class="primary-btn" type="submit">Create User</button></div>
      </form>
@@ -716,13 +745,12 @@ async function loadUserCreateOptions(){
       (roles.data||[]).map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
   }
 
-  const loc=await state.supabase.from("locations").select("id,name").order("name");
+  const loc=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
   const locEl=$("newUserLocation");
   if(!loc.error && loc.data){
-    locEl.innerHTML=`<option value="">No specific location</option>`+
-      loc.data.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");
+    locEl.innerHTML=`<option value="">All Locations</option>`+
+      loc.data.filter(x=>x.active!==false).map(x=>`<option value="${x.id}">${esc(x.location_name)}${x.location_code?` (${esc(x.location_code)})`:""}</option>`).join("");
   }
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
 }
 
 async function createUser(e){
@@ -732,17 +760,8 @@ async function createUser(e){
   msg.className="message";
   msg.textContent="Creating user...";
 
-<<<<<<< HEAD
-=======
-  const phone=normalizePhone(f.phone);
-  if(!/^\+91\d{10}$/.test(phone)){
-    msg.textContent="Enter a valid Indian mobile number.";
-    msg.className="message error";
-    return;
-  }
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
-  if(String(f.password).length<8){
-    msg.textContent="Password must be at least 8 characters.";
+  if(String(f.password).length<6 || String(f.password).length>12){
+    msg.textContent="Password must be 6 to 12 characters.";
     msg.className="message error";
     return;
   }
@@ -764,16 +783,9 @@ async function createUser(e){
     body:JSON.stringify({
       username:normalizeUsername(f.username),
       full_name:f.full_name.trim(),
-<<<<<<< HEAD
-      password:f.password,
-      role_id:f.role_id,
-      location_id:f.location_id && f.location_id !== "ALL" ? f.location_id : null,
-=======
-      phone,
       password:f.password,
       role_id:f.role_id,
       location_id:f.location_id||null,
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
       active:f.active==="true"
     })
   });
@@ -793,30 +805,37 @@ async function createUser(e){
 
 async function loadUsers(){
   if(!state.supabase || $("usersTable")===null) return;
-  const r=await state.supabase.from("user_profiles")
-<<<<<<< HEAD
-    .select("username,full_name,active,created_at,roles(name),location_id")
-=======
-    .select("username,full_name,phone,active,created_at,roles(name)")
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
-    .order("created_at",{ascending:false});
 
-  if(r.error){
-    $("usersTable").innerHTML=emptyState(r.error.message);
+  const [users,locations]=await Promise.all([
+    state.supabase.from("user_profiles")
+      .select("id,username,full_name,active,created_at,roles(name),location_id")
+      .order("created_at",{ascending:false}),
+    state.supabase.from("locations")
+      .select("id,location_name,location_code")
+      .order("location_name")
+  ]);
+
+  if(users.error){
+    $("usersTable").innerHTML=emptyState(friendlyDbError(users.error));
     return;
   }
 
+  const locMap=Object.fromEntries(
+    (locations.data||[]).map(x=>[
+      x.id,
+      `${x.location_name}${x.location_code?` (${x.location_code})`:""}`
+    ])
+  );
+
   $("usersTable").innerHTML=table(
-<<<<<<< HEAD
     ["Username","Name","Role","Location","Status","Created"],
-    (r.data||[]).map(x=>[
-      x.username,x.full_name||"-",x.roles?.name||"-",x.location_id||"All Locations",
-=======
-    ["Username","Name","Phone","Role","Status","Created"],
-    (r.data||[]).map(x=>[
-      x.username,x.full_name||"-",x.phone||"-",x.roles?.name||"-",
->>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
-      x.active?"Active":"Inactive",date(x.created_at)
+    (users.data||[]).map(x=>[
+      x.username,
+      x.full_name||"-",
+      x.roles?.name||"-",
+      x.location_id ? (locMap[x.location_id]||x.location_id) : "All Locations",
+      x.active?"Active":"Inactive",
+      date(x.created_at)
     ])
   );
 }
