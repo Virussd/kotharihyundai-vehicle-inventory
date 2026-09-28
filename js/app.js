@@ -57,7 +57,10 @@ async function init() {
     setConnection(false);
   }
   $("loginForm").addEventListener("submit", login);
+<<<<<<< HEAD
   if(typeof bindAuthUI === "function") bindAuthUI();
+=======
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   $("logoutBtn").addEventListener("click", logout);
   $("refreshBtn").addEventListener("click", () => loadPage(state.page));
   $("mobileMenu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
@@ -69,6 +72,7 @@ function setConnection(ok) {
 }
 
 function renderNav() {
+<<<<<<< HEAD
   $("nav").innerHTML = MENU.map((group,index) => {
     if(group.section === "MAIN") return `<div class="nav-group main-direct"><button class="nav-item main-dashboard" data-page="dashboard" type="button"><span>▦</span><span>Dashboard</span></button></div>`;
     return `<div class="nav-group ${index===1 ? "open" : ""}">
@@ -81,6 +85,14 @@ function renderNav() {
   }));
   document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
     state.page=b.dataset.page; loadPage(state.page);
+=======
+  $("nav").innerHTML = MENU.map(group => `
+    <div class="nav-group"><div class="nav-label">${group.section}</div>
+    ${group.items.map(([id,label,icon]) => `<button class="nav-item" data-page="${id}"><span>${icon}</span>${label}</button>`).join("")}
+    </div>`).join("");
+  document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
+    state.page=b.dataset.page; document.querySelector(".sidebar").classList.remove("open"); loadPage(state.page);
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   }));
 }
 
@@ -90,12 +102,18 @@ async function login(e) {
   const password = $("password").value;
 
   if (!state.supabase) {
+<<<<<<< HEAD
     $("loginMessage").textContent = "Supabase is not configured. Add your project URL and publishable key in js/config.js.";
     $("loginMessage").className="message error";
+=======
+    $("loginMessage").textContent = "Supabase is not configured. Check js/config.js.";
+    $("loginMessage").className = "message error";
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
     return;
   }
   if (!username || !password) {
     $("loginMessage").textContent = "Enter username and password.";
+<<<<<<< HEAD
     $("loginMessage").className="message error";
     return;
   }
@@ -113,6 +131,33 @@ async function login(e) {
     return;
   }
   showApp(data.user);
+=======
+    $("loginMessage").className = "message error";
+    return;
+  }
+
+  // Production login: only admin2 is enabled for the current setup.
+  if (username !== "admin2") {
+    $("loginMessage").textContent = "Invalid username or password.";
+    $("loginMessage").className = "message error";
+    return;
+  }
+
+  $("loginMessage").textContent = "Signing in...";
+  $("loginMessage").className = "message";
+
+  const email = "shubhamdamajighar6987@gmail.com";
+  const { data, error } = await state.supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    console.error("Supabase login error:", error);
+    $("loginMessage").textContent = "Invalid username or password.";
+    $("loginMessage").className = "message error";
+    return;
+  }
+
+  await showApp(data.user);
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
 }
 
 async function logout(){
@@ -122,16 +167,22 @@ async function logout(){
 
 function showLogin(){
   $("loginView").classList.remove("hidden");
+<<<<<<< HEAD
   const resetView = $("resetView");
   if (resetView) resetView.classList.add("hidden");
+=======
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   $("appView").classList.add("hidden");
 }
 
 async function showApp(user){
   state.user=user;
   $("loginView").classList.add("hidden");
+<<<<<<< HEAD
   const resetView = $("resetView");
   if (resetView) resetView.classList.add("hidden");
+=======
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   $("appView").classList.remove("hidden");
 
   let displayName = user.user_metadata?.username || user.user_metadata?.full_name || "User";
@@ -176,6 +227,7 @@ function normalizePhone(v){
 }
 
 function usernameToAuthEmail(username){
+<<<<<<< HEAD
   return normalizeUsername(username) === "admin" ? "shubhamdamajighar6987@gmail.com" : "";
 }
 
@@ -282,6 +334,11 @@ function bindAuthUI(){
   if($("backToLoginBtn")) $("backToLoginBtn").addEventListener("click",showLogin);
   if($("sendOtpBtn")) $("sendOtpBtn").addEventListener("click",startPasswordReset);
   if($("resetPasswordBtn")) $("resetPasswordBtn").addEventListener("click",completePasswordReset);
+=======
+  return normalizeUsername(username) === "admin2"
+    ? "shubhamdamajighar6987@gmail.com"
+    : "";
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
 }
 
 async function loadPage(page) {
@@ -302,8 +359,13 @@ async function loadPage(page) {
 function renderDashboard(){
   $("content").innerHTML=`
   <div class="cards">
+<<<<<<< HEAD
     ${["Total Order Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map((x,i)=>`
       <button type="button" class="stat-card stock-card" data-stock-filter="${x}"><div class="stat-title">${x}</div><div class="stat-value" id="stat${i}">0</div><div class="stat-note">Live Supabase data</div></button>`).join("")}
+=======
+    ${["Total Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map((x,i)=>`
+      <div class="stat-card"><div class="stat-title">${x}</div><div class="stat-value" id="stat${i}">0</div><div class="stat-note">Live Supabase data</div></div>`).join("")}
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   </div>
   <div class="grid-2">
     <div class="panel"><div class="panel-head"><h3>Location Stock</h3><button class="secondary-btn" onclick="loadPage('location-report')">View Report</button></div><div id="locationTable" class="table-wrap">${emptyState("No live location data available.")}</div></div>
@@ -315,7 +377,10 @@ function renderDashboard(){
     <button onclick="loadPage('search')">Search VIN</button>
   </div></div>`;
   if(!state.supabase) return;
+<<<<<<< HEAD
   document.querySelectorAll(".stock-card").forEach(c=>c.addEventListener("click",()=>openStockFilter(c.dataset.stockFilter)));
+=======
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   loadDashboardData();
 }
 
@@ -335,12 +400,19 @@ async function loadDashboardData(){
 async function renderVehicles(page){
   const title=page==="search"?"Search Vehicle":"Vehicle Stock";
   $("content").innerHTML=`
+<<<<<<< HEAD
   <div class="toolbar"><div class="searchbox"><input id="vehicleSearch" placeholder="Search VIN / chassis / model / color"><button onclick="queryVehicles()">Search</button></div></div>
   <div class="quick-actions stock-filters">${["Total Order Stock","Available Stock","In Transit","Pending Order","Bill / Not Delivered","Delivered"].map(x=>`<button type="button" data-filter="${x}">${x}</button>`).join("")}</div>
   <div class="panel"><div class="table-wrap" id="vehicleResults">${emptyState("Enter a search or load live vehicle stock.")}</div></div>
   <div id="modal"></div>`;
   document.querySelectorAll(".stock-filters button").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".stock-filters button").forEach(x=>x.classList.remove("active"));b.classList.add("active");window.vehicleStockFilter=b.dataset.filter;queryVehicles();}));
   window.vehicleStockFilter=window.vehicleStockFilter||"Total Order Stock";
+=======
+  <div class="toolbar"><div class="searchbox"><input id="vehicleSearch" placeholder="Search VIN / chassis / model / color"><button onclick="queryVehicles()">Search</button></div>
+  <button class="primary-btn" onclick="openVehicleForm()">+ Add Vehicle</button></div>
+  <div class="panel"><div class="table-wrap" id="vehicleResults">${emptyState("Enter a search or load live vehicle stock.")}</div></div>
+  <div id="modal"></div>`;
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   if(page!=="search") queryVehicles();
 }
 async function queryVehicles(){
@@ -348,9 +420,12 @@ async function queryVehicles(){
   if(!state.supabase){$("vehicleResults").innerHTML=emptyState("Connect Supabase to load live vehicles.");return;}
   let query=state.supabase.from("vehicles").select("id,vin,chassis_no,model,variant,color,location_id,status,finance_company,stock_value,purchase_date").order("created_at",{ascending:false}).limit(100);
   if(q) query=query.or(`vin.ilike.%${q}%,chassis_no.ilike.%${q}%,model.ilike.%${q}%,color.ilike.%${q}%`);
+<<<<<<< HEAD
   const f=window.vehicleStockFilter||"Total Order Stock";
   const statusMap={"Available Stock":"AVAILABLE","In Transit":"IN TRANSIT","Pending Order":"PENDING ORDER","Bill / Not Delivered":"BILL / NOT DELIVERED","Delivered":"DELIVERED"};
   if(statusMap[f]) query=query.eq("status",statusMap[f]);
+=======
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   const {data,error}=await query;
   $("vehicleResults").innerHTML=error?emptyState(error.message):table(["VIN","Chassis","Model","Variant","Color","Status","Value"],(data||[]).map(v=>[`<b>${esc(v.vin)}</b>`,esc(v.chassis_no),esc(v.model),esc(v.variant),esc(v.color),`<span class="badge">${esc(v.status)}</span>`,money(v.stock_value)]));
 }
@@ -485,6 +560,7 @@ async function loadReport(page){
 }
 
 async function renderAdmin(page){
+<<<<<<< HEAD
   if(state.role!=="Admin"){ $("content").innerHTML=`<div class="panel"><div class="notice"><b>Access denied</b><p>Only Admin can access this section.</p></div></div>`; return; }
   if(page==="users") return renderUsersAdmin();
   if(page==="permissions") return renderPermissionsAdmin();
@@ -582,6 +658,71 @@ async function loadUserCreateOptions(){
     return;
   }
   locEl.innerHTML=`<option value="ALL">All Locations</option>`+(loc.data||[]).filter(x=>x.active!==false).map(x=>`<option value="${x.id}">${esc(x.location_name)}${x.location_code?` (${esc(x.location_code)})`:""}</option>`).join("");
+=======
+ const titles={
+ users:"Create Users & Roles",permissions:"Permissions","assign-roles":"Assign Roles","user-status":"User Status",audit:"Audit Logs",
+ company:"Company",locations:"Locations","import-config":"Import Configuration","system-settings":"System Settings"
+ };
+ const t=titles[page]||"Administration";
+
+ if(page==="users"){
+   if(state.role!=="Admin"){
+     $("content").innerHTML=`<div class="panel"><div class="notice"><b>Access denied</b><p>Only Admin can create users.</p></div></div>`;
+     return;
+   }
+
+   $("content").innerHTML=`<div class="panel">
+     <div class="panel-head"><h3>Create User</h3></div>
+     <form id="createUserForm" class="form-grid">
+       <div><label>USERNAME</label><input name="username" required placeholder="accounts01"></div>
+       <div><label>FULL NAME</label><input name="full_name" required placeholder="Accounts User"></div>
+       <div><label>PHONE NUMBER</label><input name="phone" required placeholder="9876543210" type="tel"></div>
+       <div><label>PASSWORD</label><input name="password" required type="password" minlength="8" placeholder="Minimum 8 characters"></div>
+       <div><label>ROLE</label><select name="role_id" id="newUserRole" required><option value="">Loading roles...</option></select></div>
+       <div><label>LOCATION</label><select name="location_id" id="newUserLocation"><option value="">No specific location</option></select></div>
+       <div><label>STATUS</label><select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+       <div class="full form-actions"><button class="primary-btn" type="submit">Create User</button></div>
+     </form>
+     <div id="createUserMessage" class="message"></div>
+   </div>
+   <div class="panel"><div class="panel-head"><h3>Users</h3><button class="secondary-btn" id="refreshUsersBtn">↻ Refresh</button></div>
+     <div id="usersTable">${emptyState("Loading users...")}</div>
+   </div></div>`;
+
+   await loadUserCreateOptions();
+   $("createUserForm").addEventListener("submit",createUser);
+   $("refreshUsersBtn").addEventListener("click",loadUsers);
+   await loadUsers();
+   return;
+ }
+
+ if(!["Admin"].includes(state.role) && ["permissions","assign-roles","user-status","audit","company","locations","import-config","system-settings"].includes(page)){
+   $("content").innerHTML=`<div class="panel"><div class="notice"><b>Access denied</b><p>Only Admin can access this section.</p></div></div>`;
+   return;
+ }
+
+ $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>${t}</h3></div>
+ <div class="notice"><b>Kothari Hyundai</b><p>This administration module is connected to Supabase. Configure the relevant records here.</p></div>
+ <div class="empty-state"><div class="empty-icon">⚙</div><h4>${t}</h4><p>No records to display.</p></div></div>`;
+}
+
+async function loadUserCreateOptions(){
+  const roles=await state.supabase.from("roles").select("id,name").order("name");
+  const roleEl=$("newUserRole");
+  if(roles.error){
+    roleEl.innerHTML=`<option value="">Unable to load roles</option>`;
+  }else{
+    roleEl.innerHTML=`<option value="">Select role</option>`+
+      (roles.data||[]).map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join("");
+  }
+
+  const loc=await state.supabase.from("locations").select("id,name").order("name");
+  const locEl=$("newUserLocation");
+  if(!loc.error && loc.data){
+    locEl.innerHTML=`<option value="">No specific location</option>`+
+      loc.data.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");
+  }
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
 }
 
 async function createUser(e){
@@ -591,6 +732,15 @@ async function createUser(e){
   msg.className="message";
   msg.textContent="Creating user...";
 
+<<<<<<< HEAD
+=======
+  const phone=normalizePhone(f.phone);
+  if(!/^\+91\d{10}$/.test(phone)){
+    msg.textContent="Enter a valid Indian mobile number.";
+    msg.className="message error";
+    return;
+  }
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
   if(String(f.password).length<8){
     msg.textContent="Password must be at least 8 characters.";
     msg.className="message error";
@@ -614,9 +764,16 @@ async function createUser(e){
     body:JSON.stringify({
       username:normalizeUsername(f.username),
       full_name:f.full_name.trim(),
+<<<<<<< HEAD
       password:f.password,
       role_id:f.role_id,
       location_id:f.location_id && f.location_id !== "ALL" ? f.location_id : null,
+=======
+      phone,
+      password:f.password,
+      role_id:f.role_id,
+      location_id:f.location_id||null,
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
       active:f.active==="true"
     })
   });
@@ -637,7 +794,11 @@ async function createUser(e){
 async function loadUsers(){
   if(!state.supabase || $("usersTable")===null) return;
   const r=await state.supabase.from("user_profiles")
+<<<<<<< HEAD
     .select("username,full_name,active,created_at,roles(name),location_id")
+=======
+    .select("username,full_name,phone,active,created_at,roles(name)")
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
     .order("created_at",{ascending:false});
 
   if(r.error){
@@ -646,9 +807,15 @@ async function loadUsers(){
   }
 
   $("usersTable").innerHTML=table(
+<<<<<<< HEAD
     ["Username","Name","Role","Location","Status","Created"],
     (r.data||[]).map(x=>[
       x.username,x.full_name||"-",x.roles?.name||"-",x.location_id||"All Locations",
+=======
+    ["Username","Name","Phone","Role","Status","Created"],
+    (r.data||[]).map(x=>[
+      x.username,x.full_name||"-",x.phone||"-",x.roles?.name||"-",
+>>>>>>> 35b8dd20af11753bea1d70bbd6aa97a7092a981e
       x.active?"Active":"Inactive",date(x.created_at)
     ])
   );
