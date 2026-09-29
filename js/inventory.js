@@ -15,7 +15,7 @@ const REPORTS = {
   "dealer-report": {title:"Dealer Code-wise Stock", source:"dealer_code_stock_report", totals:true, sort:["vehicle_count","desc"],
     cols:[col("Dealer","dealer_code"), col("Total Vehicles","vehicle_count","num"), col("In Stock","stock_count","num"), col("In Transit","in_transit_count","num"), col("Pending Order","pending_count","num"), col("Stock Value","stock_value","money")]},
   "aging-report": {title:"Aging Report", source:"aging_report", sort:["aging_days","desc"],
-    cols:[col("VIN No.","vin"), col("Model","model"), col("Status","status"), col("Purchase Date","purchase_date","date"), col("Aging Days","aging_days","num"), col("Bucket","aging_bucket")]},
+    cols:[col("VIN No.","vin"), col("Order No","order_no"), col("Model","model"), col("Variant","variant"), col("Color","color"), col("Status","status"), col("Purchase / Order Date","purchase_date","date"), col("Aging Days","aging_days","num"), col("Bucket","aging_bucket")]},
   "delivery-report": {title:"Delivery Report", source:"delivery_report", sort:["delivery_date","desc"],
     cols:[col("Delivery No","delivery_no"), col("Date","delivery_date","date"), col("VIN","vin"), col("Model","model"), col("Customer","customer_name"), col("Finance","finance_company")]},
   "pending-report": {title:"Pending Order Report", source:"pending_order_report", sort:["order_date","desc"],
@@ -27,13 +27,15 @@ const REPORTS = {
 };
 
 /* ---------------------------------------------------------------- Dashboard */
+const STAT_CARDS = [["Total Order Stock","stat0","all"],["Available Stock","stat1","stock"],["In Transit","stat2","transit"],["Pending Order","stat3","pending"],["Bill / Not Delivered","stat4","bill"],["Delivered","stat5","delivered"]];
+
 function renderDashboard(){
-  const stats = [["Total Order Stock","stat0"],["Available Stock","stat1"],["In Transit","stat2"],["Pending Order","stat3"],["Bill / Not Delivered","stat4"],["Delivered","stat5"]];
   const link = (page, label) => `<button class="secondary-btn" type="button" onclick="navigate('${page}')" ${can(page) ? "" : "hidden"}>${label}</button>`;
   $("content").innerHTML = `
   <div class="cards dashboard-cards">
-    ${stats.map(([x,id]) => `<div class="stat-card"><div class="stat-title">${x}</div><div class="stat-value" id="${id}">0</div><div class="stat-note">Live Supabase data</div></div>`).join("")}
+    ${STAT_CARDS.map(([x,id,stage]) => `<button type="button" class="stat-card stat-card-button" data-stage="${stage}" title="Click to view vehicles"><div class="stat-title">${x}</div><div class="stat-value" id="${id}">0</div><div class="stat-money" id="${id}v">₹ 0.00</div><div class="stat-note">Click to view list ›</div></button>`).join("")}
   </div>
+  <div class="panel"><div class="panel-head"><h3>Model-wise Count & Ageing <small style="font-weight:400;color:#98a2b3">(Total Order Stock − Bill/Not Delivered − Delivered)</small></h3>${link("aging-report","Aging Report")}</div><div id="modelAgeDash" class="table-wrap">${emptyState("Loading...")}</div></div>
   <div class="grid-2">
     <div class="panel"><div class="panel-head"><h3>Available Stock – Finance-wise</h3>${link("finance-report","View Report")}</div><div id="financeDash" class="table-wrap">${emptyState("Loading...")}</div></div>
     <div class="panel"><div class="panel-head"><h3>Available Stock – Dealer Code-wise</h3>${link("dealer-report","View Report")}</div><div id="dealerDash" class="table-wrap">${emptyState("Loading...")}</div></div>
@@ -43,8 +45,54 @@ function renderDashboard(){
     <div class="panel"><div class="panel-head"><h3>Recent Vehicle Movements</h3>${link("gate-report","View All")}</div><div id="gateTable" class="table-wrap">${emptyState("Loading...")}</div></div>
   </div>
   <div class="panel"><div class="panel-head"><h3>Location-wise Stock & Value</h3>${link("location-report","View Report")}</div><div id="locationTable" class="table-wrap">${emptyState("Loading...")}</div></div>
-  <div class="panel"><div class="panel-head"><h3>Model-wise Stock & Value</h3>${link("model-report","View Report")}</div><div id="modelDash" class="table-wrap">${emptyState("Loading...")}</div></div>`;
+  <div class="panel"><div class="panel-head"><h3>Model-wise Stock & Value</h3>${link("model-report","View Report")}</div><div id="modelDash" class="table-wrap">${emptyState("Loading...")}</div></div>
+  <div id="modal"></div>`;
+  document.querySelectorAll("[data-stage]").forEach(b => b.addEventListener("click", () => showStageVehicles(b.dataset.stage)));
   if(state.supabase) return loadDashboardData();
+}
+
+/* ---- Click a dashboard card -> vehicle list in a window (modal) ---- */
+const STAGE_TITLES = {all:"Total Order Stock (All Vehicles)", stock:"Available Stock", transit:"In Transit", pending:"Pending Order", bill:"Bill / Not Delivered", delivered:"Delivered"};
+const STAGE_MODAL = {rows:[], title:""};
+const STAGE_COLS = [["Order No","order_no"],["VIN No.","vin"],["Model","model"],["Variant","variant"],["Color","color"],["Dealer","dealer_code"],["Financier Name","finance_company"],["Status","status"],["Date","_date"],["Stock Value","_value"]];
+function stageCell(v, k){
+  if(k === "_date") return fmtD(v.delivery_date ?? v.purchase_date ?? v.hmi_invoice_date ?? v.order_date);
+  if(k === "_value") return money(v.stock_value);
+  if(k === "status") return statusBadge(v.status);
+  if(k === "vin") return raw(`<b class="mono">${esc(v.vin)}</b>`);
+  return v[k];
+}
+async function showStageVehicles(stage){
+  const title = STAGE_TITLES[stage] || "Vehicles";
+  $("modal").innerHTML = `<div class="modal-bg"><div class="modal" style="width:min(1150px,96vw)" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+    <div class="panel-head"><h3>${esc(title)} <span id="stageCount" style="color:#98a2b3;font-weight:400"></span></h3>
+      <div class="report-tools"><input id="stageFilter" type="search" placeholder="Filter VIN / model / order..." aria-label="Filter"><button class="secondary-btn" type="button" id="stageExport">⤓ Export</button><button class="icon-btn" type="button" id="modalClose" aria-label="Close">×</button></div></div>
+    <div class="table-wrap" id="stageTable">${emptyState("Loading...")}</div></div></div>`;
+  $("modalClose").addEventListener("click", closeModal);
+  $("modal").querySelector(".modal-bg").addEventListener("click", e => { if(e.target.classList.contains("modal-bg")) closeModal(); });
+  try {
+    const all = await allVehicles();
+    await getLocations();
+    STAGE_MODAL.title = title;
+    STAGE_MODAL.rows = stage === "all" ? all : all.filter(v => vStage(v) === stage);
+    const draw = () => {
+      const f = $("stageFilter").value.trim().toLowerCase();
+      const rows = f ? STAGE_MODAL.rows.filter(v => [v.vin,v.model,v.variant,v.color,v.order_no,v.finance_company,v.dealer_code,v.engine_no].some(x => String(x ?? "").toLowerCase().includes(f))) : STAGE_MODAL.rows;
+      $("stageCount").textContent = `(${rows.length.toLocaleString("en-IN")} vehicles)`;
+      const shown = rows.slice(0, 500);
+      $("stageTable").innerHTML = table(STAGE_COLS.map(c => c[0]), shown.map(v => STAGE_COLS.map(c => stageCell(v, c[1]))),
+        rows.length ? ["Total", `${rows.length.toLocaleString("en-IN")} vehicles`, "", "", "", "", "", "", "", raw(`<b>${money(rows.reduce((s,v) => s + vValue(v), 0))}</b>`)] : null)
+        + (rows.length > 500 ? `<p style="padding:8px;color:#667085;font-size:12px">Showing first 500 of ${rows.length.toLocaleString("en-IN")}. Use filter or Export for all.</p>` : "");
+      STAGE_MODAL.filtered = rows;
+    };
+    $("stageFilter").addEventListener("input", draw);
+    $("stageExport").addEventListener("click", () => {
+      const rows = STAGE_MODAL.filtered || STAGE_MODAL.rows;
+      if(!rows.length){ toast("Nothing to export.","error"); return; }
+      exportSheet("dashboard-" + stage, STAGE_COLS.map(c => c[0]), rows.map(v => STAGE_COLS.map(c => c[1] === "_value" ? vValue(v) : c[1] === "_date" ? (v.delivery_date ?? v.purchase_date ?? v.hmi_invoice_date ?? v.order_date ?? "") : (v[c[1]] ?? ""))));
+    });
+    draw();
+  } catch(err){ $("stageTable").innerHTML = emptyState("Could not load: " + (err.message || err)); }
 }
 
 async function getStatusSummary(){
@@ -56,30 +104,43 @@ async function getStatusSummary(){
 
 async function loadDashboardData(){
   const safe = p => Promise.resolve(p).then(data => ({data, error:null}), error => ({error, data:null}));
-  const [summary, loc, fin, dealer, model, gate] = await Promise.all([
+  const [summary, loc, fin, dealer, model, gate, ageing] = await Promise.all([
     safe(computedRows("dashboard_stock_summary")), safe(computedRows("location_stock_report")), safe(computedRows("finance_stock_report")),
-    safe(computedRows("dealer_code_stock_report")), safe(computedRows("model_stock_report")), safe(computedRows("gate_movement_report"))
+    safe(computedRows("dealer_code_stock_report")), safe(computedRows("model_stock_report")), safe(computedRows("gate_movement_report")), safe(computedRows("model_ageing_report"))
   ]);
   const byCount = r => r.data && r.data.sort((a,b) => b.vehicle_count - a.vehicle_count);
+  byCount(ageing);
   if(summary.data?.[0]){
     const d = summary.data[0];
     [d.total_stock, d.available_stock, d.in_transit, d.pending_order, d.bill_not_delivered, d.delivered]
       .forEach((v,i) => { const el = $("stat" + i); if(el) el.textContent = Number(v || 0).toLocaleString("en-IN"); });
+    [d.total_value, d.available_value, d.transit_value, d.pending_value, d.bill_value, d.delivered_value]
+      .forEach((v,i) => { const el = $("stat" + i + "v"); if(el) el.textContent = money(v); });
   }
-  const put = (id, res, headers, mapper) => {
+  const sum = (rows, k) => (rows || []).reduce((t, r) => t + Number(r[k] || 0), 0);
+  const put = (id, res, headers, mapper, footer) => {
     const el = $(id); if(!el) return;
-    el.innerHTML = res.error ? emptyState("Could not load: " + (res.error.message || res.error)) : table(headers, (res.data || []).map(mapper));
+    el.innerHTML = res.error ? emptyState("Could not load: " + (res.error.message || res.error)) : table(headers, (res.data || []).map(mapper), (res.data || []).length ? footer?.(res.data) : null);
   };
+  const tot = (label, cells) => [raw(`<b>${label}</b>`), ...cells.map(c => raw(`<b>${c}</b>`))];
+  const n = v => Number(v || 0).toLocaleString("en-IN");
   byCount(loc); byCount(fin); byCount(dealer); byCount(model);
-  put("locationTable", loc, ["Location","Total","In Stock","In Transit","Pending Order","Stock Value"], r => [r.location_name, r.vehicle_count, r.stock_count, r.in_transit_count, r.pending_count, money(r.stock_value)]);
-  put("financeDash", fin, ["Financier Name","Total","In Stock","In Transit","Stock Value"], r => [r.finance_company, r.vehicle_count, r.stock_count, r.in_transit_count, money(r.stock_value)]);
-  put("dealerDash", dealer, ["Dealer","Total","In Stock","In Transit","Stock Value"], r => [r.dealer_code, r.vehicle_count, r.stock_count, r.in_transit_count, money(r.stock_value)]);
-  put("modelDash", model, ["Model","Total","In Stock","In Transit","Pending Order","Stock Value"], r => [r.model, r.vehicle_count, r.stock_count, r.in_transit_count, r.pending_count, money(r.stock_value)]);
+  put("locationTable", loc, ["Location","Total","In Stock","In Transit","Pending Order","Stock Value"], r => [r.location_name, r.vehicle_count, r.stock_count, r.in_transit_count, r.pending_count, money(r.stock_value)],
+    d => tot("Total", [n(sum(d,"vehicle_count")), n(sum(d,"stock_count")), n(sum(d,"in_transit_count")), n(sum(d,"pending_count")), money(sum(d,"stock_value"))]));
+  put("financeDash", fin, ["Financier Name","Total","In Stock","In Transit","Stock Value"], r => [r.finance_company, r.vehicle_count, r.stock_count, r.in_transit_count, money(r.stock_value)],
+    d => tot("Total", [n(sum(d,"vehicle_count")), n(sum(d,"stock_count")), n(sum(d,"in_transit_count")), money(sum(d,"stock_value"))]));
+  put("dealerDash", dealer, ["Dealer","Total","In Stock","In Transit","Stock Value"], r => [r.dealer_code, r.vehicle_count, r.stock_count, r.in_transit_count, money(r.stock_value)],
+    d => tot("Total", [n(sum(d,"vehicle_count")), n(sum(d,"stock_count")), n(sum(d,"in_transit_count")), money(sum(d,"stock_value"))]));
+  put("modelDash", model, ["Model","Total","In Stock","In Transit","Pending Order","Stock Value"], r => [r.model, r.vehicle_count, r.stock_count, r.in_transit_count, r.pending_count, money(r.stock_value)],
+    d => tot("Total", [n(sum(d,"vehicle_count")), n(sum(d,"stock_count")), n(sum(d,"in_transit_count")), n(sum(d,"pending_count")), money(sum(d,"stock_value"))]));
+  put("modelAgeDash", ageing, ["Model","Total Vehicles","0-30 days","31-60 days","61-90 days","90+ days","No Date"], r => [r.model, r.vehicle_count, r.b0, r.b31, r.b61, r.b90, r.bnd],
+    d => tot("Total", [n(sum(d,"vehicle_count")), n(sum(d,"b0")), n(sum(d,"b31")), n(sum(d,"b61")), n(sum(d,"b90")), n(sum(d,"bnd"))]));
   put("gateTable", {data:(gate.data || []).slice(0,8), error:gate.error}, ["Date","Type","VIN No.","Location"], r => [fmtDT(r.movement_time), r.movement_type, r.vin, r.to_location || r.from_location]);
   try {
     const groups = await getStatusSummary();
     if($("statusDash")) $("statusDash").innerHTML = groups.map(g =>
       `<div class="status-row"><span><b>${esc(g.status)}</b></span><span>${g.count.toLocaleString("en-IN")} vehicles</span><span>${money(g.value)}</span></div>`).join("")
+      + (groups.length ? `<div class="status-row" style="font-weight:800;border-top:2px solid #e4e7ec"><span>Total</span><span>${groups.reduce((t,g) => t + g.count, 0).toLocaleString("en-IN")} vehicles</span><span>${money(groups.reduce((t,g) => t + g.value, 0))}</span></div>` : "")
       || emptyState("No stock data yet. Import the Order / Purchase report to begin.");
   } catch(err){ if($("statusDash")) $("statusDash").innerHTML = emptyState("Could not load: " + err.message); }
 }
@@ -295,6 +356,15 @@ function drawReport(){
   $("reportTable").innerHTML = table(def.cols.map(c => c.h), rows.map(r => def.cols.map(c => fmtCell(c.t, r[c.k]))), footer);
   $("reportMeta").textContent = `${rows.length.toLocaleString("en-IN")} of ${REPORT.rows.length.toLocaleString("en-IN")} rows`;
 }
+async function drawAgingSummary(rows){
+  const box = $("agingSummary"); if(!box) return;
+  const all = await allVehicles();
+  const c = {bill:0, delivered:0}; all.forEach(v => { const st = vStage(v); if(c[st] !== undefined) c[st]++; });
+  const b = {}; rows.forEach(r => { b[r.aging_bucket] = (b[r.aging_bucket] || 0) + 1; });
+  const n = v => Number(v || 0).toLocaleString("en-IN");
+  box.innerHTML = `<b>Total Order Stock ${n(all.length)} − Bill / Not Delivered ${n(c.bill)} − Delivered ${n(c.delivered)} = Total Vehicles ${n(rows.length)}</b>
+    <p>${AGING_BUCKETS.filter(k => b[k]).map(k => `${esc(k)}: <b>${n(b[k])}</b>`).join(" &nbsp;•&nbsp; ") || "No vehicles"}</p>`;
+}
 async function renderReport(page){
   const def = REPORTS[page];
   if(!def){ $("content").innerHTML = `<div class="panel">${emptyState("Unknown report.")}</div>`; return; }
@@ -302,6 +372,7 @@ async function renderReport(page){
   $("content").innerHTML = `<div class="panel"><div class="panel-head"><h3>${esc(def.title)}</h3>
     <div class="report-tools"><input id="reportFilter" type="search" placeholder="Filter rows..." aria-label="Filter rows">
     <button class="secondary-btn" type="button" id="reportExport">⤓ Export</button><button class="secondary-btn" type="button" id="reportRefresh">↻ Refresh</button></div></div>
+    ${page === "aging-report" ? `<div id="agingSummary" class="notice" style="margin-bottom:12px">Loading...</div>` : ""}
     <div class="table-wrap" id="reportTable">${emptyState("Loading live report...")}</div><div class="pager"><span id="reportMeta"></span></div></div>`;
   $("reportFilter").addEventListener("input", drawReport);
   $("reportRefresh").addEventListener("click", () => loadReport(page));
@@ -321,5 +392,6 @@ async function loadReport(page){
       const c = (typeof x === "number" && typeof y === "number") ? x - y : String(x ?? "").localeCompare(String(y ?? "")); return dir === "desc" ? -c : c; }); }
     REPORT.rows = rows;
     drawReport();
+    if(page === "aging-report") drawAgingSummary(rows);
   } catch(err){ $("reportTable").innerHTML = emptyState(err.message); }
 }
