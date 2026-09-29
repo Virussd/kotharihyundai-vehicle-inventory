@@ -141,3 +141,36 @@ th{position:sticky;top:0;z-index:1}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #0b63ce;outline-offset:2px}
 @media(max-width:1200px){.cards{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.cards{grid-template-columns:repeat(2,1fr)}.grid-2,.form-grid{grid-template-columns:1fr}.content{padding:14px}.topbar{padding:0 14px}}
+
+/* Gate: Single / Bulk tabs + bulk panel */
+.gate-tabs{display:flex;gap:4px}
+.gate-tab{border:1px solid #d7dce5;background:#fff;color:#475467;font-size:10px;font-weight:600;padding:7px 12px;border-radius:6px;cursor:pointer}
+.gate-tab.active{background:#002c5f;border-color:#002c5f;color:#fff}
+.bulk-wrap{display:block}
+.bulk-block{margin-top:12px;padding-top:10px;border-top:1px solid #eef0f3;font-size:11px}
+.bulk-block>b{display:block;margin-bottom:6px;color:#002c5f}
+.bulk-block .gate-filters{margin-bottom:6px;flex-wrap:wrap}
+.bulk-paste{width:100%;min-height:60px;border:1px solid #d7dce5;border-radius:5px;padding:7px 8px;font-size:10px;margin:4px 0}
+.bulk-bar{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:10px;flex-wrap:wrap}
+.bulk-bar span{flex:1;color:#475467}
+.bulk-bar button,.bulk-block .secondary-btn,.bulk-block .primary-btn{font-size:10px;padding:6px 10px;border-radius:6px}
+.bulk-block .table-wrap{max-height:280px;overflow:auto;border:1px solid #eef0f3;border-radius:5px;margin-top:6px}
+.bulk-block table{font-size:9px}
+.bulk-block th,.bulk-block td{padding:5px 6px;white-space:nowrap;border-bottom:1px solid #eef0f3}
+.bulk-block .gate-action-buttons{margin-top:8px}
+.secondary-btn.danger{color:#b42318;border-color:#fda29b}
+.table-icon-btn{border:1px solid #d7dce5;background:#fff;border-radius:5px;padding:2px 6px;margin-right:3px;cursor:pointer;font-size:11px}
+.table-icon-btn.danger{color:#b42318}
+
+/* Gate: print bar + Bhilarwadi IN details */
+.gate-print-bar{display:flex;align-items:center;gap:10px;background:#ecfdf3;border:1px solid #abefc6;color:#067647;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:11px;font-weight:600}
+.gate-print-bar span{flex:1}
+.gate-print-bar button{font-size:10px;padding:6px 11px;border-radius:6px}
+.gate-in-wrap{grid-column:1/-1}
+.gate-in-block{border:1px dashed #b2c4de;border-radius:8px;padding:10px 12px;margin:6px 0;background:#f8fbff}
+.gate-in-title{font-size:11px;font-weight:700;color:#002c5f;margin-bottom:4px}
+.gate-in-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 12px}
+.gate-in-block input[type=file]{font-size:9px;padding:4px}
+.in-note{display:block;font-size:9px;color:#067647;min-height:11px;word-break:break-all}
+.in-thumb{height:64px;border-radius:5px;border:1px solid #d7dce5;margin-top:3px}
+@media(max-width:760px){.gate-in-grid{grid-template-columns:1fr}}
