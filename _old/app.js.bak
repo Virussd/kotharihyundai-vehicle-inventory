@@ -9,14 +9,14 @@ const MENU = [
     ["sales-import","Sales Report Import","⇧"],["import-history","Import History","≡"]
   ]},
   {section:"GATE MANAGEMENT", items:[
-    ["bhilarwadi","Bhilarwadi In / Out","⇄"],["gate","Vehicle In / Out","⇄"],
-    ["bulk-gate","Bulk Vehicle In / Out","⇄"],["gate-pass","Gate Pass","▣"],["register","In-Out Register","☷"]
+    ["bhilarwadi","Bhilarwadi In / Out","⇄"],["gate","Branch Vehicle In / Out","⇄"],
+    ["gate-pass","Gate Pass","▣"],["register","In-Out Register","☷"]
   ]},
   {section:"DELIVERY", items:[
     ["delivery-entry","Delivery Entry","✓"],["delivered","Delivered Vehicles","✓"],["delivery-history","Delivery History","◷"]
   ]},
   {section:"REPORTS", items:[
-    ["dashboard-report","Dashboard Report","▥"],["location-report","Location Stock","▥"],["model-report","Model Stock","▥"],
+    ["location-report","Location Stock","▥"],["model-report","Model Stock","▥"],
     ["finance-report","Finance-wise Stock","₹"],["aging-report","Aging Report","◴"],["delivery-report","Delivery Report","✓"],
     ["pending-report","Pending Order Report","!"],["transit-report","In Transit Report","→"],["gate-report","Gate Movement Report","⇄"],
     ["dealer-report","Dealer Code-wise Stock","▥"]
@@ -72,34 +72,48 @@ function renderNav() {
     const key = `nav-open-${gi}`;
     const collapsible = group.collapsible !== false;
     return `<div class="nav-group ${collapsible ? "nav-collapsible" : ""}" data-nav-group="${key}">
-      <button class="nav-label nav-label-btn" type="button" data-nav-toggle="${key}" ${collapsible ? "" : "disabled"}>
-        <span>${group.section}</span>${collapsible ? '<span class="nav-chevron">⌄</span>' : ''}
+      <button class="nav-label nav-label-btn ${collapsible ? "" : "main-direct"}" type="button" data-nav-toggle="${key}" ${collapsible ? "" : "disabled"}>
+        <span class="nav-section-title">${esc(group.section)}</span>${collapsible ? '<span class="nav-chevron">⌄</span>' : ''}
       </button>
       <div class="nav-submenu" data-nav-submenu="${key}">
-        ${group.items.map(([id,label,icon]) => `<button class="nav-item" data-page="${id}"><span>${icon}</span><span class="nav-item-text">${label}</span></button>`).join("")}
+        ${group.items.map(([id,label,icon]) => `<button class="nav-item" type="button" data-page="${id}" title="${esc(label)}"><span class="nav-item-icon">${icon}</span><span class="nav-item-text">${esc(label)}</span></button>`).join("")}
       </div>
     </div>`;
   }).join("");
 
-  document.querySelectorAll("[data-nav-toggle]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const key = btn.dataset.navToggle;
-      const group = document.querySelector(`[data-nav-group="${key}"]`);
-      if (!group) return;
-      group.classList.toggle("collapsed");
-      localStorage.setItem(key, group.classList.contains("collapsed") ? "0" : "1");
-    });
-    const key = btn.dataset.navToggle;
-    const saved = localStorage.getItem(key);
-    const group = document.querySelector(`[data-nav-group="${key}"]`);
-    if (saved === "0") group?.classList.add("collapsed");
+  const groups = [...document.querySelectorAll(".nav-collapsible")];
+  const closeAll = (except = null) => groups.forEach(g => {
+    if (g !== except) g.classList.add("collapsed");
   });
 
-  document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => {
-    state.page=b.dataset.page;
-    const parent=b.closest(".nav-group");
-    parent?.classList.remove("collapsed");
-    document.querySelector(".sidebar").classList.remove("open");
+  groups.forEach((group, index) => {
+    const btn = group.querySelector("[data-nav-toggle]");
+    const key = btn?.dataset.navToggle;
+    const saved = localStorage.getItem(key);
+    // Keep all main sections closed initially unless explicitly saved open.
+    if (saved === "1") group.classList.remove("collapsed");
+    else group.classList.add("collapsed");
+
+    btn?.addEventListener("click", () => {
+      const wasCollapsed = group.classList.contains("collapsed");
+      closeAll(group);
+      group.classList.toggle("collapsed", !wasCollapsed);
+      localStorage.setItem(key, wasCollapsed ? "1" : "0");
+    });
+  });
+
+  document.querySelectorAll(".nav-item").forEach(btn => btn.addEventListener("click", () => {
+    state.page = btn.dataset.page;
+    const parent = btn.closest(".nav-group");
+    // Keep the selected section open after selecting a sub-option.
+    if (parent?.classList.contains("nav-collapsible")) {
+      closeAll(parent);
+      parent.classList.remove("collapsed");
+      localStorage.setItem(parent.dataset.navGroup, "1");
+    }
+    document.querySelectorAll(".nav-item").forEach(x => x.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelector(".sidebar")?.classList.remove("open");
     loadPage(state.page);
   }));
 }
@@ -318,7 +332,7 @@ async function loadPage(page) {
   if(page==="vehicles"||page==="search"||page==="status") return renderVehicles(page);
   if(page==="timeline") return renderTimeline();
   if(page.includes("import")) return renderImport(page);
-  if(["bhilarwadi","gate","bulk-gate","gate-pass","register"].includes(page)) return renderGate(page);
+  if(["bhilarwadi","gate","gate-pass","register"].includes(page)) return renderGate(page);
   if(page.includes("delivery")) return renderDelivery(page);
   if(page.includes("report")) return renderReport(page);
   return renderAdmin(page);
@@ -328,16 +342,16 @@ function renderDashboard(){
   $("content").innerHTML=`
   <div class="cards dashboard-cards">
     ${[["Total Order Stock","stat0"],["Available Stock","stat1"],["In Transit","stat2"],["Pending Order","stat3"],["Bill / Not Delivered","stat4"],["Delivered","stat5"]].map(([x,id])=>`
-      <button class="stat-card stat-card-button" onclick="loadPage('dashboard-report')">
-        <div class="stat-title">${x}</div><div class="stat-value" id="${id}">0</div><div class="stat-note">Live Supabase data • Click for report</div>
-      </button>`).join("")}
+      <div class="stat-card">
+        <div class="stat-title">${x}</div><div class="stat-value" id="${id}">0</div><div class="stat-note">Live Supabase data</div>
+      </div>`).join("")}
   </div>
   <div class="grid-2">
     <div class="panel"><div class="panel-head"><h3>Available Stock – Finance-wise</h3><button class="secondary-btn" onclick="loadPage('finance-report')">View Report</button></div><div id="financeDash" class="table-wrap">${emptyState("Loading...")}</div></div>
     <div class="panel"><div class="panel-head"><h3>Available Stock – Dealer Code-wise</h3><button class="secondary-btn" onclick="loadPage('dealer-report')">View Report</button></div><div id="dealerDash" class="table-wrap">${emptyState("Loading...")}</div></div>
   </div>
   <div class="grid-2">
-    <div class="panel"><div class="panel-head"><h3>Status-wise Stock</h3><button class="secondary-btn" onclick="loadPage('dashboard-report')">View Report</button></div><div id="statusDash" class="status-summary">${emptyState("Loading...")}</div></div>
+    <div class="panel"><div class="panel-head"><h3>Status-wise Stock</h3></div><div id="statusDash" class="status-summary">${emptyState("Loading...")}</div></div>
     <div class="panel"><div class="panel-head"><h3>Recent Vehicle Movements</h3><button class="secondary-btn" onclick="loadPage('gate-report')">View All</button></div><div id="gateTable" class="table-wrap">${emptyState("Loading...")}</div></div>
   </div>
   <div class="panel"><div class="panel-head"><h3>Location-wise Stock & Value</h3><button class="secondary-btn" onclick="loadPage('location-report')">View Report</button></div><div id="locationTable" class="table-wrap">${emptyState("Loading...")}</div></div>
@@ -348,54 +362,10 @@ function renderDashboard(){
 async function loadDashboardData(){
   const sb=state.supabase;
   if(!sb)return;
-
-  // Dashboard summary. If the optional summary view is unavailable,
-  // calculate the six cards directly from vehicles so the dashboard
-  // does not break.
   const summary=await sb.from("dashboard_stock_summary").select("*").maybeSingle();
-  if(!summary.error && summary.data){
-    const d=summary.data;
-    const values=[
-      d.total_order_stock ?? d.total_stock ?? 0,
-      d.available_stock ?? 0,
-      d.in_transit ?? 0,
-      d.pending_order ?? 0,
-      d.bill_not_delivered ?? 0,
-      d.delivered ?? 0
-    ];
-    values.forEach((v,i)=>{
-      const el=$("stat"+i);
-      if(el)el.textContent=Number(v||0).toLocaleString("en-IN");
-    });
-  } else {
-    const fallback=await sb.from("vehicles")
-      .select("status,stock_value")
-      .limit(10000);
-
-    if(!fallback.error){
-      const rows=fallback.data||[];
-      const norm=v=>String(v||"").trim().toUpperCase().replace(/\s+/g,"_");
-      const isAvailable=v=>["AVAILABLE","IN_STOCK","STOCK"].includes(norm(v));
-      const isTransit=v=>["IN_TRANSIT","IN-TRANSIT","TRANSIT"].includes(norm(v));
-      const isPending=v=>["PENDING_ORDER","PENDING","ORDER_PENDING"].includes(norm(v));
-      const isBill=v=>["BILL_NOT_DELIVERED","BILLED_NOT_DELIVERED","BILL_NOT_DELIVERED_"].includes(norm(v));
-      const isDelivered=v=>["DELIVERED","DELIVERY"].includes(norm(v));
-
-      const counts=[
-        rows.length,
-        rows.filter(v=>isAvailable(v.status)).length,
-        rows.filter(v=>isTransit(v.status)).length,
-        rows.filter(v=>isPending(v.status)).length,
-        rows.filter(v=>isBill(v.status)).length,
-        rows.filter(v=>isDelivered(v.status)).length
-      ];
-      counts.forEach((v,i)=>{
-        const el=$("stat"+i);
-        if(el)el.textContent=Number(v||0).toLocaleString("en-IN");
-      });
-    }
+  if(summary.data){
+    [summary.data.total_stock,summary.data.available_stock,summary.data.in_transit,summary.data.pending_order,summary.data.bill_not_delivered,summary.data.delivered].forEach((v,i)=>{ const el=$("stat"+i); if(el)el.textContent=Number(v||0).toLocaleString("en-IN"); });
   }
-
   const [loc,fin,dealer,model,gate]=await Promise.all([
     sb.from("location_stock_report").select("*").order("vehicle_count",{ascending:false}).limit(100),
     sb.from("finance_stock_report").select("*").order("vehicle_count",{ascending:false}).limit(100),
@@ -403,91 +373,22 @@ async function loadDashboardData(){
     sb.from("model_stock_report").select("*").order("vehicle_count",{ascending:false}).limit(100),
     sb.from("gate_movement_report").select("*").order("movement_time",{ascending:false}).limit(8)
   ]);
+  if($("locationTable")) $("locationTable").innerHTML=loc.error?emptyState(loc.error.message):table(["Location","Vehicles","Stock Value"],(loc.data||[]).map(r=>[r.location_name,r.vehicle_count,money(r.stock_value)]));
+  if($("financeDash")) $("financeDash").innerHTML=fin.error?emptyState(fin.error.message):table(["Finance","Vehicles","Stock Value"],(fin.data||[]).map(r=>[r.finance_company||"Not Financed",r.vehicle_count,money(r.stock_value)]));
+  if($("dealerDash")) $("dealerDash").innerHTML=dealer.error?emptyState(dealer.error.message):table(["Dealer Code","Vehicles","Stock Value"],(dealer.data||[]).map(r=>[r.dealer_code||"-",r.vehicle_count,money(r.stock_value)]));
+  if($("modelDash")) $("modelDash").innerHTML=model.error?emptyState(model.error.message):table(["Model","Vehicles","Stock Value"],(model.data||[]).map(r=>[r.model||"-",r.vehicle_count,money(r.stock_value)]));
+  if($("gateTable")) $("gateTable").innerHTML=gate.error?emptyState(gate.error.message):table(["Date","Type","VIN","Location"],(gate.data||[]).map(r=>[date(r.movement_time),r.movement_type,r.vin,r.to_location||r.from_location||"-"]));
 
-  if($("locationTable")){
-    $("locationTable").innerHTML=loc.error
-      ? emptyState(friendlyDbError(loc.error))
-      : table(["Location","Vehicles","Stock Value"],(loc.data||[]).map(r=>[
-          r.location_name,r.vehicle_count,money(r.stock_value)
-        ]));
-  }
-
-  if($("financeDash")){
-    $("financeDash").innerHTML=fin.error
-      ? emptyState(friendlyDbError(fin.error))
-      : table(["Finance","Vehicles","Stock Value"],(fin.data||[]).map(r=>[
-          r.finance_company||"Not Financed",r.vehicle_count,money(r.stock_value)
-        ]));
-  }
-
-  if($("dealerDash")){
-    $("dealerDash").innerHTML=dealer.error
-      ? emptyState(friendlyDbError(dealer.error))
-      : table(["Dealer Code","Vehicles","Stock Value"],(dealer.data||[]).map(r=>[
-          r.dealer_code||"-",r.vehicle_count,money(r.stock_value)
-        ]));
-  }
-
-  if($("modelDash")){
-    $("modelDash").innerHTML=model.error
-      ? emptyState(friendlyDbError(model.error))
-      : table(["Model","Vehicles","Stock Value"],(model.data||[]).map(r=>[
-          r.model||"-",r.vehicle_count,money(r.stock_value)
-        ]));
-  }
-
-  if($("gateTable")){
-    $("gateTable").innerHTML=gate.error
-      ? emptyState(friendlyDbError(gate.error))
-      : table(["Date","Type","VIN","Location"],(gate.data||[]).map(r=>[
-          date(r.movement_time),r.movement_type,r.vin,
-          r.to_location||r.from_location||"-"
-        ]));
-  }
-
-  // Status-wise summary. Works directly from vehicles even when the
-  // optional report view is unavailable.
-  const vr=await sb.from("vehicles").select("status,stock_value").limit(10000);
+  // Status-wise count from vehicle records, so the dashboard remains useful even without a dedicated status view.
+  const vr=await sb.from("vehicles").select("status,stock_value").limit(5000);
   if($("statusDash")){
-    if(vr.error){
-      $("statusDash").innerHTML=emptyState(friendlyDbError(vr.error));
-    }else{
-      const groups={};
-      (vr.data||[]).forEach(v=>{
-        const k=String(v.status||"UNKNOWN").trim()||"UNKNOWN";
-        groups[k]??={count:0,value:0};
-        groups[k].count++;
-        groups[k].value+=Number(v.stock_value||0);
-      });
-
-      const entries=Object.entries(groups).sort((a,b)=>b[1].count-a[1].count);
-      const total=Math.max((vr.data||[]).length,1);
-
-      $("statusDash").innerHTML=entries.length
-        ? `<div class="status-pie-list">${entries.map(([k,v])=>{
-            const pct=Math.round((v.count/total)*100);
-            return `<button class="status-pie-row" onclick="loadPage('status')">
-              <span class="status-dot"></span>
-              <span class="status-name">${esc(k)}</span>
-              <span class="status-bar"><i style="width:${pct}%"></i></span>
-              <b>${v.count.toLocaleString("en-IN")}</b>
-              <span>${money(v.value)}</span>
-            </button>`;
-          }).join("")}</div>`
-        : emptyState("No stock data available.");
+    if(vr.error){ $("statusDash").innerHTML=emptyState(vr.error.message); }
+    else {
+      const groups={}; (vr.data||[]).forEach(v=>{const k=v.status||"UNKNOWN"; groups[k]??={count:0,value:0}; groups[k].count++; groups[k].value+=Number(v.stock_value||0);});
+      const rows=Object.entries(groups).sort((a,b)=>b[1].count-a[1].count).map(([k,v])=>`<div class="status-row"><span><b>${esc(k)}</b></span><span>${v.count.toLocaleString("en-IN")} vehicles</span><span>${money(v.value)}</span></div>`).join("");
+      $("statusDash").innerHTML=rows||emptyState("No stock data available.");
     }
   }
-}
-
-function friendlyDbError(result){
-  const msg=String(result?.message||"Unable to load data.");
-  if(/permission denied/i.test(msg)){
-    return "Database permission denied. Run KOTHARI_PERMISSION_FIX.sql in Supabase SQL Editor.";
-  }
-  if(/does not exist/i.test(msg)){
-    return "This report/view is not configured yet. Dashboard vehicle data can still be used.";
-  }
-  return msg;
 }
 
 async function renderVehicles(page){
@@ -552,29 +453,100 @@ async function loadImportHistory(){
 }
 
 function renderGate(page){
- const title={bhilarwadi:"Bhilarwadi In / Out",gate:"Vehicle In / Out","bulk-gate":"Bulk Vehicle In / Out","gate-pass":"Gate Pass",register:"In-Out Register"}[page];
- $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>${title}</h3>${page==="register"?`<button class="secondary-btn" onclick="loadGateRegister()">Refresh</button>`:""}</div>
- ${page==="register"?`<div id="gateRegister">${emptyState("No live gate movements.")}</div>`:`<form id="gateForm" class="form-grid">
- <div><label>VIN</label><input name="vin" required></div><div><label>MOVEMENT</label><select name="movement_type"><option>IN</option><option>OUT</option></select></div>
- <div><label>REASON</label><select name="movement_reason"><option>PURCHASE</option><option>DELIVERY</option><option>TRANSFER</option><option>TEST_DRIVE</option><option>OTHER</option></select></div>
- <div><label>GATE NAME</label><input name="gate_name"></div><div><label>DRIVER NAME</label><input name="driver_name"></div><div><label>DRIVER MOBILE</label><input name="driver_mobile"></div>
- <div class="full"><label>REMARKS</label><textarea name="remarks"></textarea></div><div class="full form-actions"><button class="primary-btn">Save Gate Movement</button></div></form>`}</div>`;
- if(page==="register")loadGateRegister(); else $("gateForm").addEventListener("submit",saveGate);
+ const titles={bhilarwadi:"Bhilarwadi In / Out",gate:"Branch Vehicle In / Out"};
+ const title=titles[page];
+ const isGatePage=page==='bhilarwadi'||page==='gate';
+ if(!isGatePage){
+   $("content").innerHTML=`<div class="panel"><div class="panel-head"><h3>${title||"Gate Management"}</h3>${page==="register"?`<button class="secondary-btn" onclick="loadGateRegister()">Refresh</button>`:""}</div>${page==="register"?`<div id="gateRegister">${emptyState("No live gate movements.")}</div>`:`${emptyState("This gate module is not available.")}`}</div>`;
+   if(page==="register")loadGateRegister();
+   return;
+ }
+ state.gateSelectedVehicleId=null;
+ const gateName=page==='bhilarwadi'?'Bhilarwadi':'Branch';
+ $("content").innerHTML=`
+ <div class="gate-page gate-compact-shared">
+   <div class="panel gate-entry-panel">
+     <div class="gate-panel-head">
+       <h3>${esc(title)}</h3>
+       <button class="primary-btn gate-new-btn" type="button" id="gateNewEntry">＋ New Entry</button>
+     </div>
+     <form id="gateForm" class="gate-form-grid">
+       <input type="hidden" name="gate_name" value="${esc(gateName)}">
+       <div class="gate-field gate-vehicle-field"><label>VEHICLE NO. <span>*</span></label><div class="gate-input-icon"><input name="vehicle_no" id="gateVehicleNo" required autocomplete="off" placeholder="Enter Vehicle No."><button type="button" id="gateVehicleScan" title="Scan Vehicle No.">▣</button></div></div>
+       <div class="gate-field gate-vin-field"><label>VIN NUMBER <span>*</span></label><input name="vin" id="gateVin" required autocomplete="off" placeholder="Enter VIN / last 6 digits"><div id="gateVinSuggestions" class="gate-suggestions"></div></div>
+       <div class="gate-field"><label>ENGINE NO.</label><input name="engine_no" id="gateEngineNo" placeholder="Auto / Manual"></div>
+       <div class="gate-field"><label>VARIANT</label><input name="variant" id="gateVariant" placeholder="Auto / Manual"></div>
+       <div class="gate-field"><label>COLOR</label><input name="color" id="gateColor" placeholder="Auto / Manual"></div>
+       <div class="gate-field"><label>FINANCE BANK</label><input name="finance_bank" id="gateFinanceBank" placeholder="Auto / Manual"></div>
+       <div class="gate-field"><label>MOVEMENT <span>*</span></label><select name="movement_type" required><option value="IN">IN</option><option value="OUT">OUT</option></select></div>
+       <div class="gate-field"><label>REASON <span>*</span></label><select name="movement_reason" required><option value="NEW VEHICLE">NEW VEHICLE</option><option value="DEMO CAR">DEMO CAR</option></select></div>
+       <div class="gate-field"><label>RECEIPT DATE <span>*</span></label><input name="receipt_dt" id="gateReceiptDate" type="date" required></div>
+       <div class="gate-field gate-remarks-field"><label>REMARKS</label><textarea name="remarks" id="gateRemarks" placeholder="Enter remarks"></textarea></div>
+       <div class="gate-form-actions"><span id="purchaseLookupMsg" class="form-help">VIN चे शेवटचे 6 digits टाका → Purchase Report suggestions. Match नसेल तर manual entry.</span><div class="gate-action-buttons"><button class="secondary-btn" type="button" id="gateClear">↻ Clear</button><button class="primary-btn" type="submit">▣ Save Gate Movement</button></div></div>
+     </form>
+   </div>
+   <div class="panel gate-recent-panel"><div class="gate-recent-head"><h3>Recent Gate Movements</h3><div class="gate-filters"><input id="gateFromDate" type="date" title="From Date"><span>→</span><input id="gateToDate" type="date" title="To Date"><select id="gateMovementFilter"><option value="ALL">All</option><option value="IN">IN</option><option value="OUT">OUT</option></select><button class="primary-btn" type="button" id="gateSearch">⌕ Search</button></div></div><div id="recentGateMovements" class="table-wrap"></div></div>
+ </div>`;
+ $("gateReceiptDate").value=new Date().toISOString().slice(0,10);
+ $("gateForm").addEventListener("submit",saveGate);
+ $("gateClear").addEventListener("click",()=>clearGateForm(true));
+ $("gateNewEntry").addEventListener("click",()=>clearGateForm(true));
+ $("gateVehicleScan").addEventListener("click",startVehicleNumberScanner);
+ let lookupTimer;
+ $("gateVin").addEventListener("input",()=>{clearTimeout(lookupTimer);lookupTimer=setTimeout(()=>loadPurchaseVehicleDetails($("gateVin").value.trim(),true),250);});
+ $("gateVin").addEventListener("blur",()=>setTimeout(hideGateSuggestions,180));
+ $("gateSearch").addEventListener("click",loadRecentGateMovements);
+ loadRecentGateMovements();
 }
+
+function hideGateSuggestions(){const el=$("gateVinSuggestions");if(el)el.innerHTML="";}
+function vehicleFieldValue(v,keys){for(const k of keys){if(v&&v[k]!==undefined&&v[k]!==null&&String(v[k]).trim()!=="")return v[k];}return "";}
+
+async function loadPurchaseVehicleDetails(value,showSuggestions=true){
+ if(!state.supabase||!value)return;
+ const input=String(value).trim(); if(input.length<3){hideGateSuggestions();return;}
+ const suffix=input.replace(/\s+/g,"").slice(-6);
+ const r=await state.supabase.from("vehicles").select("*").ilike("vin",`%${input.length>=6?suffix:input}%`).limit(20);
+ if(r.error){if($("purchaseLookupMsg")){ $("purchaseLookupMsg").textContent="Purchase Report lookup unavailable. Manual entry enabled.";$("purchaseLookupMsg").className="form-help error-text";}hideGateSuggestions();return;}
+ const rows=r.data||[];
+ if(showSuggestions){const box=$("gateVinSuggestions");if(box){box.innerHTML=rows.length?rows.slice(0,10).map((v,i)=>{const vin=vehicleFieldValue(v,["vin"]),model=vehicleFieldValue(v,["model","model_name"]),variant=vehicleFieldValue(v,["variant","variant_name"]),color=vehicleFieldValue(v,["color","colour"]);return `<button type="button" class="gate-suggestion" data-suggestion-index="${i}"><strong>${esc(vin)}</strong><span>${esc([model,variant,color].filter(Boolean).join(" • "))}</span></button>`;}).join(""):"<div class=\"gate-suggestion-empty\">No Purchase Report match — manual entry enabled.</div>";box.querySelectorAll(".gate-suggestion").forEach(btn=>btn.addEventListener("mousedown",ev=>{ev.preventDefault();applyPurchaseVehicle(rows[Number(btn.dataset.suggestionIndex)]);}));}}
+ if(rows.length===1&&input.length>=6)applyPurchaseVehicle(rows[0]);
+}
+function applyPurchaseVehicle(v){
+ state.gateSelectedVehicleId=v?.id||null;
+ if($("gateEngineNo"))$("gateEngineNo").value=vehicleFieldValue(v,["engine_no","engine_number","engineNo"]);
+ if($("gateVariant"))$("gateVariant").value=vehicleFieldValue(v,["variant","variant_name"]);
+ if($("gateColor"))$("gateColor").value=vehicleFieldValue(v,["color","colour"]);
+ if($("gateFinanceBank"))$("gateFinanceBank").value=vehicleFieldValue(v,["finance_company","finance_bank","finance","bank_name"]);
+ if($("gateVin"))$("gateVin").value=vehicleFieldValue(v,["vin"]);
+ if($("purchaseLookupMsg")){ $("purchaseLookupMsg").textContent="Purchase Report match found. Vehicle No. remains manual / scan entry.";$("purchaseLookupMsg").className="form-help success-text"; }
+ hideGateSuggestions();
+}
+async function startVehicleNumberScanner(){
+ const target=$("gateVehicleNo");if(!target)return;
+ if("BarcodeDetector" in window&&navigator.mediaDevices?.getUserMedia){try{const detector=new BarcodeDetector({formats:["code_128","code_39","qr_code","data_matrix","ean_13","ean_8"]});const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}}});const wrap=document.createElement("div");wrap.className="scanner-modal";wrap.innerHTML=`<div class="scanner-card"><div class="scanner-head"><b>Scan Vehicle No.</b><button type="button" id="scannerClose">×</button></div><video id="scannerVideo" autoplay playsinline></video><small>Barcode / QR camera scan</small></div>`;document.body.appendChild(wrap);const video=wrap.querySelector("video");video.srcObject=stream;const close=()=>{stream.getTracks().forEach(t=>t.stop());wrap.remove();};wrap.querySelector("#scannerClose").addEventListener("click",close);const scan=async()=>{if(!document.body.contains(wrap))return;try{const codes=await detector.detect(video);if(codes[0]?.rawValue){target.value=codes[0].rawValue.trim();target.dispatchEvent(new Event("input",{bubbles:true}));close();return;}}catch(e){}requestAnimationFrame(scan);};video.addEventListener("loadeddata",scan,{once:true});return;}catch(e){} }
+ target.focus();alert("Camera barcode scanning is not available in this browser. Enter or paste the Vehicle No. manually.");
+}
+
+function clearGateForm(resetAll=false){const form=$("gateForm");if(!form)return;form.reset();state.gateSelectedVehicleId=null;if($("gateReceiptDate"))$("gateReceiptDate").value=new Date().toISOString().slice(0,10);hideGateSuggestions();if($("purchaseLookupMsg")){ $("purchaseLookupMsg").textContent="VIN चे शेवटचे 6 digits टाका → Purchase Report suggestions. Match नसेल तर manual entry.";$("purchaseLookupMsg").className="form-help";}}
+
 async function saveGate(e){
- e.preventDefault(); if(!state.supabase){alert("Connect Supabase first.");return;}
- const f=Object.fromEntries(new FormData(e.target).entries());
- const v=await state.supabase.from("vehicles").select("id").eq("vin",f.vin).maybeSingle();
- if(!v.data){alert("VIN not found.");return;}
- f.vehicle_id=v.data.id;
- delete f.vin;
- const {error}=await state.supabase.from("gate_movements").insert(f);
- if(error)alert(error.message);else{e.target.reset();alert("Gate movement saved.");}
+ e.preventDefault();if(!state.supabase){alert("Connect Supabase first.");return;}
+ const f=Object.fromEntries(new FormData(e.target).entries());const vin=(f.vin||"").trim(),vehicleNo=(f.vehicle_no||"").trim();
+ if(!vehicleNo){alert("Enter or scan Vehicle No.");return;}if(!vin){alert("Enter VIN number or last 6 digits.");return;}
+ let vehicleId=state.gateSelectedVehicleId||null,vehicle=null;
+ const exact=await state.supabase.from("vehicles").select("id,vin").eq("vin",vin).maybeSingle();
+ if(!exact.error&&exact.data){vehicleId=exact.data.id;vehicle=exact.data;}else if(!vehicleId&&vin.length>=6){const suffix=vin.replace(/\s+/g,"").slice(-6);const find=await state.supabase.from("vehicles").select("id,vin").ilike("vin",`%${suffix}%`).limit(2);if(!find.error&&find.data?.length===1){vehicleId=find.data[0].id;vehicle=find.data[0];}}
+ const payload={vehicle_id:vehicleId,vehicle_no:vehicleNo,vin:vehicle?.vin||vin,engine_no:f.engine_no||null,variant:f.variant||null,color:f.color||null,finance_bank:f.finance_bank||null,movement_type:f.movement_type,movement_reason:f.movement_reason,receipt_dt:f.receipt_dt||null,remarks:f.remarks||null,gate_name:f.gate_name||null,driver_name:f.driver_name||null,driver_mobile:f.driver_mobile||null};
+ const ins=await state.supabase.from("gate_movements").insert(payload);if(ins.error){alert(ins.error.message);return;}alert(vehicleId?"Gate movement saved successfully.":"Gate movement saved with manual vehicle details.");clearGateForm(true);await loadRecentGateMovements();
 }
-async function loadGateRegister(){
- if(!state.supabase)return;
- const r=await state.supabase.from("gate_movement_report").select("*").order("movement_time",{ascending:false}).limit(200);
- $("gateRegister").innerHTML=table(["Date","Type","Reason","VIN","From","To","Gate","Pass"],(r.data||[]).map(x=>[date(x.movement_time),x.movement_type,x.movement_reason,x.vin,x.from_location||"-",x.to_location||"-",x.gate_name||"-",x.gate_pass_no||"-"]));
+
+async function loadRecentGateMovements(){
+ const target=$("recentGateMovements");if(!target)return;if(!state.supabase){target.innerHTML=emptyState("Connect Supabase to view gate movements.");return;}
+ let q=state.supabase.from("gate_movements").select("*").order("created_at",{ascending:false}).limit(100);const from=$("gateFromDate")?.value,to=$("gateToDate")?.value,movement=$("gateMovementFilter")?.value;if(from)q=q.gte("receipt_dt",from);if(to)q=q.lte("receipt_dt",to);if(movement&&movement!=="ALL")q=q.eq("movement_type",movement);
+ const r=await q;if(r.error){target.innerHTML=emptyState("Gate movements unavailable: "+esc(r.error.message));return;}const rows=r.data||[];const ids=[...new Set(rows.map(x=>x.vehicle_id).filter(Boolean))];let vehicleMap={};if(ids.length){const vr=await state.supabase.from("vehicles").select("id,vin,vehicle_no,engine_no,variant,color,finance_company").in("id",ids);(vr.data||[]).forEach(v=>vehicleMap[v.id]=v);}
+ const mapped=rows.map((x,i)=>{const v=vehicleMap[x.vehicle_id]||{};return[i+1,date(x.receipt_dt||x.created_at),x.movement_type||"-",x.vehicle_no||v.vehicle_no||"-",x.vin||v.vin||"-",x.engine_no||v.engine_no||"-",x.variant||v.variant||"-",x.color||v.color||"-",x.finance_bank||v.finance_company||"-",x.movement_reason||"-",x.remarks||"-",`<button class="table-icon-btn" title="Edit">✎</button><button class="table-icon-btn danger" title="Delete">▥</button>`];});
+ target.innerHTML=table(["#","Date","Movement","Vehicle No.","VIN Number","Engine No.","Variant","Color","Finance Bank","Reason","Remarks","Action"],mapped);
 }
 
 function renderDelivery(page){
@@ -605,7 +577,6 @@ async function loadDeliveries(){
 }
 
 function renderReport(page){
- if(page==="dashboard-report") return renderDashboardReport();
  const map={
  "location-report":["Location Stock","location_stock_report",["Location","Vehicles","Stock Value"],r=>[r.location_name,r.vehicle_count,money(r.stock_value)]],
  "model-report":["Model Stock","model_stock_report",["Model","Vehicles","Stock Value"],r=>[r.model,r.vehicle_count,money(r.stock_value)]],
@@ -636,56 +607,6 @@ async function loadReport(page){
  if(!state.supabase){$("reportTable").innerHTML=emptyState("Connect Supabase to load live report.");return;}
  const r=await state.supabase.from(m[0]).select("*").limit(1000);
  $("reportTable").innerHTML=r.error?emptyState(r.error.message):table(m[1],(r.data||[]).map(m[2]));
-}
-
-function renderDashboardReport(){
-  $("content").innerHTML=`<div class="panel">
-    <div class="panel-head"><div><h3>Dashboard Report</h3><small>All dashboard stock data in one report</small></div><button class="primary-btn" id="exportDashboardExcel">Export to Excel</button></div>
-    <div class="report-filters dashboard-report-filters">
-      <select id="drLocation"><option value="">All Locations</option></select>
-      <select id="drStatus"><option value="">All Status</option></select>
-      <input id="drSearch" placeholder="Search VIN / chassis / model / color">
-      <button class="secondary-btn" id="drApply">Apply Filter</button><button class="secondary-btn" id="drClear">Clear</button>
-    </div>
-    <div id="dashboardReportSummary" class="report-summary"></div>
-    <div id="dashboardReportTable">${emptyState("Loading dashboard report...")}</div>
-  </div>`;
-  loadDashboardReport();
-  $("drApply").onclick=loadDashboardReport;
-  $("drClear").onclick=()=>{ $("drLocation").value=""; $("drStatus").value=""; $("drSearch").value=""; loadDashboardReport(); };
-  $("exportDashboardExcel").onclick=exportDashboardExcel;
-}
-
-let dashboardReportRows=[];
-async function loadDashboardReport(){
-  if(!state.supabase){$("dashboardReportTable").innerHTML=emptyState("Connect Supabase to load report.");return;}
-  const q=state.supabase.from("vehicles").select("vin,chassis_no,model,variant,color,status,location_id,finance_company,dealer_code,stock_value,purchase_date").order("created_at",{ascending:false}).limit(10000);
-  const r=await q;
-  if(r.error){$("dashboardReportTable").innerHTML=emptyState(r.error.message);return;}
-  let rows=r.data||[];
-  const search=($('drSearch').value||'').trim().toLowerCase();
-  const status=$('drStatus').value; const location=$('drLocation').value;
-  if(status) rows=rows.filter(x=>(x.status||"")===status);
-  if(location) rows=rows.filter(x=>String(x.location_id||"")===location);
-  if(search) rows=rows.filter(x=>[x.vin,x.chassis_no,x.model,x.variant,x.color].some(v=>String(v||"").toLowerCase().includes(search)));
-  dashboardReportRows=rows;
-  const total=rows.length, value=rows.reduce((a,x)=>a+Number(x.stock_value||0),0);
-  $('dashboardReportSummary').innerHTML=`<div><b>Vehicles</b><strong>${total.toLocaleString("en-IN")}</strong></div><div><b>Stock Value</b><strong>${money(value)}</strong></div>`;
-  $('dashboardReportTable').innerHTML=table(["VIN","Chassis","Model","Variant","Color","Status","Finance","Dealer Code","Stock Value"],rows.map(x=>[x.vin,x.chassis_no,x.model,x.variant,x.color,`<span class="badge">${esc(x.status||"-")}</span>`,x.finance_company||"-",x.dealer_code||"-",money(x.stock_value)]));
-  const locs=await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
-  if(locs.data) $('drLocation').innerHTML='<option value="">All Locations</option>'+locs.data.filter(x=>x.active!==false).map(x=>`<option value="${x.id}">${esc(x.location_name)} (${esc(x.location_code||"")})</option>`).join('');
-  const statuses=[...new Set((r.data||[]).map(x=>x.status).filter(Boolean))].sort();
-  $('drStatus').innerHTML='<option value="">All Status</option>'+statuses.map(x=>`<option>${esc(x)}</option>`).join('');
-}
-
-function exportDashboardExcel(){
-  if(!dashboardReportRows.length){alert("No data to export.");return;}
-  const rows=dashboardReportRows.map(x=>({VIN:x.vin||"",Chassis:x.chassis_no||"",Model:x.model||"",Variant:x.variant||"",Color:x.color||"",Status:x.status||"",Finance:x.finance_company||"",Dealer_Code:x.dealer_code||"",Stock_Value:Number(x.stock_value||0),Purchase_Date:x.purchase_date||""}));
-  if(window.XLSX){
-    const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Dashboard Report"); XLSX.writeFile(wb,`Kothari_Hyundai_Dashboard_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
-  } else {
-    const headers=Object.keys(rows[0]); const csv=[headers.join(","),...rows.map(r=>headers.map(h=>`"${String(r[h]).replaceAll('"','""')}"`).join(","))].join("\n"); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'})); a.download=`Kothari_Hyundai_Dashboard_Report_${new Date().toISOString().slice(0,10)}.csv`; a.click();
-  }
 }
 
 async function renderAdmin(page){
@@ -805,37 +726,20 @@ async function createUser(e){
 
 async function loadUsers(){
   if(!state.supabase || $("usersTable")===null) return;
+  const r=await state.supabase.from("user_profiles")
+    .select("username,full_name,active,created_at,roles(name),location_id")
+    .order("created_at",{ascending:false});
 
-  const [users,locations]=await Promise.all([
-    state.supabase.from("user_profiles")
-      .select("id,username,full_name,active,created_at,roles(name),location_id")
-      .order("created_at",{ascending:false}),
-    state.supabase.from("locations")
-      .select("id,location_name,location_code")
-      .order("location_name")
-  ]);
-
-  if(users.error){
-    $("usersTable").innerHTML=emptyState(friendlyDbError(users.error));
+  if(r.error){
+    $("usersTable").innerHTML=emptyState(r.error.message);
     return;
   }
 
-  const locMap=Object.fromEntries(
-    (locations.data||[]).map(x=>[
-      x.id,
-      `${x.location_name}${x.location_code?` (${x.location_code})`:""}`
-    ])
-  );
-
   $("usersTable").innerHTML=table(
     ["Username","Name","Role","Location","Status","Created"],
-    (users.data||[]).map(x=>[
-      x.username,
-      x.full_name||"-",
-      x.roles?.name||"-",
-      x.location_id ? (locMap[x.location_id]||x.location_id) : "All Locations",
-      x.active?"Active":"Inactive",
-      date(x.created_at)
+    (r.data||[]).map(x=>[
+      x.username,x.full_name||"-",x.roles?.name||"-",x.location_id||"All Locations",
+      x.active?"Active":"Inactive",date(x.created_at)
     ])
   );
 }

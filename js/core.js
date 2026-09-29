@@ -1,0 +1,383 @@
+"use strict";
+/* =====================================================================
+   CORE: menu, permissions, helpers, auth, navigation, page routing
+   ===================================================================== */
+
+const MENU = [
+  {section:"MAIN", items:[["dashboard","Dashboard","▦"]], collapsible:false},
+  {section:"VEHICLE MANAGEMENT", items:[
+    ["vehicles","Vehicle Stock","▤"],["search","Search by Chassis / VIN","⌕"],
+    ["status","Current Status","◉"],["timeline","View Timeline","◷"]
+  ]},
+  {section:"DATA IMPORT", items:[
+    ["order-import","Order Report Import","⇧"],["purchase-import","Purchase Report Import","⇧"],
+    ["sales-import","Sales Report Import","⇧"],["import-history","Import History","≡"]
+  ]},
+  {section:"GATE MANAGEMENT", items:[
+    ["bhilarwadi","Bhilarwadi In / Out","⇄"],["gate","Branch Vehicle In / Out","⇄"],
+    ["gate-pass","Gate Pass","▣"],["register","In-Out Register","☷"]
+  ]},
+  {section:"DELIVERY", items:[
+    ["delivery-entry","Delivery Entry","✓"],["delivered","Delivered Vehicles","✓"],["delivery-history","Delivery History","◷"]
+  ]},
+  {section:"REPORTS", items:[
+    ["location-report","Location Stock","▥"],["model-report","Model Stock","▥"],
+    ["finance-report","Finance-wise Stock","₹"],["aging-report","Aging Report","◴"],["delivery-report","Delivery Report","✓"],
+    ["pending-report","Pending Order Report","!"],["transit-report","In Transit Report","→"],["gate-report","Gate Movement Report","⇄"],
+    ["dealer-report","Dealer Code-wise Stock","▥"]
+  ]},
+  {section:"ADMINISTRATION", items:[
+    ["users","Create Users & Roles","♙"],["permissions","Permissions","⚿"],
+    ["assign-roles","Assign Roles","↔"],["user-status","User Status","●"],["audit","Audit Logs","⌁"]
+  ]},
+  {section:"SETTINGS", items:[
+    ["company","Company","⌂"],["locations","Locations","⌖"],
+    ["import-config","Import Configuration","⚙"],["system-settings","System Settings","⚙"]
+  ]}
+];
+
+/* ---- Permissions -------------------------------------------------------
+   Codes match public.permissions (ADMIN_FEATURES.sql). Admin always has all.
+   If a role has NO rows in role_permissions, DEFAULT_PERMS below is used, so
+   nobody is locked out before the Permissions screen is configured.        */
+const ALL_PERMS = ["dashboard.view","vehicle.view","vehicle.update","import.order","import.purchase","import.sales",
+  "gate.inout","gate.pass","delivery.manage","reports.view","users.manage","permissions.manage","settings.manage"];
+
+const PAGE_PERM = {
+  dashboard:"dashboard.view",
+  vehicles:"vehicle.view", search:"vehicle.view", status:"vehicle.view", timeline:"vehicle.view",
+  "order-import":"import.order", "purchase-import":"import.purchase", "sales-import":"import.sales",
+  "import-history":["import.order","import.purchase","import.sales"],
+  bhilarwadi:"gate.inout", gate:"gate.inout", register:"gate.inout", "gate-pass":"gate.pass",
+  "delivery-entry":"delivery.manage", delivered:"delivery.manage", "delivery-history":"delivery.manage",
+  users:"users.manage", "assign-roles":"users.manage", "user-status":"users.manage", audit:"users.manage",
+  permissions:"permissions.manage",
+  company:"settings.manage", locations:"settings.manage", "import-config":"settings.manage", "system-settings":"settings.manage"
+};
+MENU.find(g => g.section === "REPORTS").items.forEach(([id]) => { PAGE_PERM[id] = "reports.view"; });
+
+const DEFAULT_PERMS = {
+  accounts: ["dashboard.view","vehicle.view","vehicle.update","import.order","import.purchase","import.sales",
+             "gate.inout","gate.pass","delivery.manage","reports.view"],
+  "gate operator": ["gate.inout","gate.pass"],
+  "security guard": ["gate.inout"],
+  viewer: ["dashboard.view","reports.view"],
+  owner: ["dashboard.view","reports.view"]
+};
+
+const state = {
+  page:"dashboard", user:null, profile:null, role:"", isAdmin:false, perms:new Set(),
+  supabase:null, connected:false, locations:null, gateSelectedVehicleId:null
+};
+
+function can(page){
+  if(state.isAdmin) return true;
+  const need = PAGE_PERM[page];
+  if(!need) return false;
+  return (Array.isArray(need) ? need : [need]).some(c => state.perms.has(c));
+}
+function hasPerm(code){ return state.isAdmin || state.perms.has(code); }
+
+/* ---- Small helpers ------------------------------------------------------ */
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+class Raw { constructor(html){ this.html = html; } }
+const raw = html => new Raw(html);                 // mark trusted HTML for table cells
+const isBlank = v => v === null || v === undefined || v === "";
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch { /* private mode */ } }
+};
+
+function cell(v){ return v instanceof Raw ? v.html : (isBlank(v) ? "-" : esc(v)); }
+function table(headers, rows, footer){
+  if(!rows.length) return emptyState("No records found.");
+  const foot = footer ? `<tfoot><tr>${footer.map(c => `<td>${cell(c)}</td>`).join("")}</tr></tfoot>` : "";
+  return `<table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${
+    rows.map(r => `<tr>${r.map(c => `<td>${cell(c)}</td>`).join("")}</tr>`).join("")}</tbody>${foot}</table>`;
+}
+function emptyState(text){ return `<div class="empty-state"><div class="empty-icon">⌁</div><p>${esc(text)}</p></div>`; }
+function money(v){ return "₹ " + Number(v || 0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDT(v){ return v ? new Date(v).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "-"; }
+function fmtD(v){
+  if(!v) return "-";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+  const d = m ? new Date(+m[1], +m[2]-1, +m[3]) : new Date(v);   // date-only values must not shift with timezone
+  return isNaN(d) ? String(v) : d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+}
+function todayLocal(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function fmtCell(type, v){
+  if(isBlank(v)) return "-";
+  switch(type){
+    case "money": return money(v);
+    case "num": return Number(v).toLocaleString("en-IN");
+    case "date": return fmtD(v);
+    case "datetime": return fmtDT(v);
+    default: return v;
+  }
+}
+function statusClass(s){
+  const k = String(s || "").toLowerCase();
+  if(k.includes("pending")) return "warn";
+  if(k.includes("transit")) return "info";
+  if(k.includes("deliver")) return "ok";
+  if(k.includes("bill") || k.includes("sold")) return "purple";
+  return "";
+}
+function statusBadge(s){ return raw(`<span class="badge ${statusClass(s)}">${esc(s || "-")}</span>`); }
+// PostgREST .or()/.ilike values: remove characters that break the filter grammar
+function cleanQuery(q){ return String(q || "").replace(/[,()%*\\:"']/g," ").replace(/\s+/g," ").trim(); }
+
+function toast(msg, type = "info"){
+  let box = $("toastBox");
+  if(!box){
+    box = document.createElement("div");
+    box.id = "toastBox"; box.setAttribute("role","status"); box.setAttribute("aria-live","polite");
+    document.body.appendChild(box);
+  }
+  const t = document.createElement("div");
+  t.className = "toast " + type; t.textContent = msg;
+  box.appendChild(t);
+  setTimeout(() => t.remove(), type === "error" ? 7000 : 3500);
+}
+
+async function fetchAll(build, {page = 1000, max = 20000} = {}){
+  const out = [];
+  for(let from = 0; from < max; from += page){
+    const {data, error} = await build().range(from, from + page - 1);
+    if(error) throw error;
+    out.push(...(data || []));
+    if(!data || data.length < page) break;
+  }
+  return out;
+}
+async function getLocations(force = false){
+  if(state.locations && !force) return state.locations;
+  const r = await state.supabase.from("locations").select("id,location_name,location_code,active").order("location_name");
+  state.locations = r.error ? [] : (r.data || []);
+  return state.locations;
+}
+function locName(id){ return state.locations?.find(l => l.id === id)?.location_name || "-"; }
+
+function exportSheet(filename, headers, rows){
+  if(!window.XLSX){ toast("Excel library not loaded (check internet).","error"); return; }
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Data");
+  XLSX.writeFile(wb, `${filename}-${todayLocal()}.xlsx`);
+}
+function closeModal(){ const m = $("modal"); if(m) m.innerHTML = ""; }
+async function logAudit(action, module, entityType, entityId, details){   // best effort; only Admin can insert (RLS)
+  try {
+    await state.supabase.from("audit_logs").insert({
+      actor_id: state.user?.id, actor_username: state.profile?.username || null, action, module,
+      entity_type: entityType || null, entity_id: entityId ? String(entityId) : null,
+      details: details ? JSON.stringify(details) : null
+    });
+  } catch { /* ignore */ }
+}
+
+/* ---- Auth ---------------------------------------------------------------- */
+function supabaseReady(){
+  const c = window.SUPABASE_CONFIG;
+  return c && c.url && c.anonKey && !c.url.startsWith("YOUR_") && !c.anonKey.startsWith("YOUR_") && window.supabase;
+}
+function normalizeUsername(v){ return String(v || "").trim().toLowerCase().replace(/\s+/g,""); }
+function usernameToAuthEmail(username){
+  const u = normalizeUsername(username);
+  const map = (window.APP_CONFIG && window.APP_CONFIG.usernameEmailMap) || {};
+  if(map[u]) return map[u];                              // bootstrap Admin account
+  return `${u}@login.kotharihyundai.local`;              // users created by the create-user Edge Function
+}
+function setConnection(ok){
+  $("connectionDot").className = "dot " + (ok ? "online" : "offline");
+  $("connectionText").textContent = ok ? "Supabase connected" : "Supabase not configured";
+}
+function setLoginMessage(text, type){ const el = $("loginMessage"); el.textContent = text; el.className = "message" + (type ? " " + type : ""); }
+
+async function init(){
+  // Bind UI first: a slow getSession() must never leave the form unbound (form would reload the page).
+  $("loginForm").addEventListener("submit", login);
+  $("logoutBtn").addEventListener("click", logout);
+  $("refreshBtn").addEventListener("click", () => loadPage(state.page));
+  $("mobileMenu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
+  document.addEventListener("click", e => {
+    const sb = document.querySelector(".sidebar");
+    if(sb.classList.contains("open") && !e.target.closest(".sidebar, #mobileMenu")) sb.classList.remove("open");
+  });
+
+  if(!supabaseReady()){ setConnection(false); return; }
+  state.supabase = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+  state.connected = true;
+  setConnection(true);
+
+  // Do NOT await Supabase calls inside this callback (supabase-js can deadlock) — defer with setTimeout.
+  state.supabase.auth.onAuthStateChange((event, session) => {
+    setTimeout(() => {
+      if(event === "SIGNED_OUT") { showLogin(); return; }
+      if(session && (event === "SIGNED_IN" || event === "INITIAL_SESSION") && state.user?.id !== session.user.id) showApp(session.user);
+      // TOKEN_REFRESHED / USER_UPDATED intentionally do nothing: they must not reset the current page.
+    }, 0);
+  });
+  const {data:{session}} = await state.supabase.auth.getSession();
+  if(session && state.user?.id !== session.user.id) showApp(session.user);
+}
+
+async function login(e){
+  e.preventDefault();
+  const username = normalizeUsername($("username").value);
+  const password = $("password").value;
+  const btn = e.target.querySelector("button[type=submit]");
+  if(!state.supabase){ setLoginMessage("Supabase is not configured. Add your project URL and publishable key in js/config.js.","error"); return; }
+  if(!username || !password){ setLoginMessage("Enter username and password.","error"); return; }
+  btn.disabled = true;
+  setLoginMessage("Signing in...");
+  try {
+    const {data, error} = await state.supabase.auth.signInWithPassword({email: usernameToAuthEmail(username), password});
+    if(error){
+      setLoginMessage(error.status && error.status < 500 && error.status !== 0 ? "Invalid username or password." : "Cannot reach the server. Check internet and try again.","error");
+      return;
+    }
+    $("password").value = "";
+    showApp(data.user);
+  } catch(err){
+    setLoginMessage("Cannot reach the server. Check internet and try again.","error");
+  } finally { btn.disabled = false; }
+}
+async function logout(){
+  if(state.supabase) await state.supabase.auth.signOut();
+  showLogin();
+}
+function showLogin(){
+  state.user = null; state.profile = null; state.role = ""; state.isAdmin = false; state.perms = new Set(); state.locations = null;
+  $("loginView").classList.remove("hidden");
+  $("appView").classList.add("hidden");
+  $("content").innerHTML = "";
+}
+
+async function showApp(user){
+  state.user = user;
+  $("loginView").classList.add("hidden");
+  $("appView").classList.remove("hidden");
+  let displayName = user.user_metadata?.full_name || user.user_metadata?.username || "User";
+  try {
+    const p = await state.supabase.from("user_profiles")
+      .select("username,full_name,active,role_id,location_id,roles(name)").eq("id", user.id).maybeSingle();
+    if(p.error) console.warn(p.error.message);
+    if(p.data){
+      if(p.data.active === false){
+        await state.supabase.auth.signOut();
+        showLogin();
+        setLoginMessage("This user is inactive. Contact Admin.","error");
+        return;
+      }
+      displayName = p.data.full_name || p.data.username || displayName;
+      state.profile = p.data;
+      state.role = p.data.roles?.name || "";
+    }
+  } catch(err){ console.warn(err); }
+
+  await loadPermissions();
+  $("userName").textContent = displayName;
+  $("userName").title = state.role || "No role";
+  renderNav();
+  const first = firstAllowedPage();
+  if(first) navigate(first);
+  else $("content").innerHTML = `<div class="panel"><div class="notice"><b>No access</b><p>Your account has no role or permissions yet. Contact Admin.</p></div></div>`;
+}
+
+async function loadPermissions(){
+  const role = String(state.role || "").trim().toLowerCase();
+  state.isAdmin = role === "admin";
+  if(state.isAdmin){ state.perms = new Set(ALL_PERMS); return; }
+  let codes = [];
+  if(state.profile?.role_id){
+    const r = await state.supabase.from("role_permissions").select("permissions(code)").eq("role_id", state.profile.role_id);
+    if(!r.error) codes = (r.data || []).map(x => x.permissions?.code).filter(Boolean);
+  }
+  if(!codes.length) codes = DEFAULT_PERMS[role] || DEFAULT_PERMS.viewer;
+  state.perms = new Set(codes);
+}
+function firstAllowedPage(){
+  for(const g of MENU) for(const [id] of g.items) if(can(id)) return id;
+  return null;
+}
+
+/* ---- Navigation ---------------------------------------------------------- */
+function renderNav(){
+  const groups = MENU.map(g => ({...g, items: g.items.filter(([id]) => can(id))})).filter(g => g.items.length);
+  $("nav").innerHTML = groups.map((group, gi) => {
+    const key = "nav-open-" + group.section.replace(/\W+/g,"-").toLowerCase();
+    const collapsible = group.collapsible !== false && group.items.length > 0;
+    return `<div class="nav-group ${collapsible ? "nav-collapsible" : ""}" data-nav-group="${key}">
+      <button class="nav-label nav-label-btn ${collapsible ? "" : "main-direct"}" type="button" data-nav-toggle="${key}" ${collapsible ? 'aria-expanded="false"' : "disabled"}>
+        <span class="nav-section-title">${esc(group.section)}</span>${collapsible ? '<span class="nav-chevron">⌄</span>' : ""}
+      </button>
+      <div class="nav-submenu" data-nav-submenu="${key}">
+        ${group.items.map(([id,label,icon]) => `<button class="nav-item" type="button" data-page="${id}" title="${esc(label)}"><span class="nav-item-icon">${icon}</span><span class="nav-item-text">${esc(label)}</span></button>`).join("")}
+      </div></div>`;
+  }).join("");
+
+  const collapsibles = [...document.querySelectorAll(".nav-collapsible")];
+  const setOpen = (g, open) => {
+    g.classList.toggle("collapsed", !open);
+    g.querySelector("[data-nav-toggle]")?.setAttribute("aria-expanded", String(open));
+  };
+  collapsibles.forEach(g => setOpen(g, store.get(g.dataset.navGroup) === "1"));
+  collapsibles.forEach(g => g.querySelector("[data-nav-toggle]").addEventListener("click", () => {
+    const willOpen = g.classList.contains("collapsed");
+    collapsibles.forEach(x => { setOpen(x, x === g ? willOpen : false); store.set(x.dataset.navGroup, x === g && willOpen ? "1" : "0"); });
+  }));
+  document.querySelectorAll(".nav-item").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.page)));
+}
+function navActive(){
+  document.querySelectorAll(".nav-item").forEach(x => x.classList.toggle("active", x.dataset.page === state.page));
+}
+// Use navigate() (not loadPage) from buttons/links: it also syncs the sidebar highlight and open section.
+function navigate(page){
+  if(!can(page)){ renderDenied(); return; }
+  state.page = page;
+  const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
+  const parent = btn?.closest(".nav-collapsible");
+  if(parent){
+    document.querySelectorAll(".nav-collapsible").forEach(g => {
+      const open = g === parent;
+      g.classList.toggle("collapsed", !open);
+      g.querySelector("[data-nav-toggle]")?.setAttribute("aria-expanded", String(open));
+      store.set(g.dataset.navGroup, open ? "1" : "0");
+    });
+  }
+  document.querySelector(".sidebar")?.classList.remove("open");
+  return loadPage(page);
+}
+function renderDenied(){
+  $("content").innerHTML = `<div class="panel"><div class="notice"><b>Access denied</b><p>Your role does not have permission for this page.</p></div></div>`;
+}
+
+async function loadPage(page){
+  state.page = page;
+  navActive();
+  if(!can(page)){ renderDenied(); return; }
+  const item = MENU.flatMap(x => x.items).find(x => x[0] === page);
+  $("pageTitle").textContent = item?.[1] || "Dashboard";
+  $("pageSubtitle").textContent = "Kothari Hyundai • Live Vehicle Inventory";
+  $("content").scrollTop = 0; window.scrollTo(0, 0);
+  try {
+    if(page === "dashboard") return await renderDashboard();
+    if(["vehicles","search","status"].includes(page)) return await renderVehicles(page);
+    if(page === "timeline") return await renderTimeline();
+    if(["order-import","purchase-import","sales-import","import-history"].includes(page)) return await renderImport(page);
+    if(["bhilarwadi","gate","gate-pass","register"].includes(page)) return await renderGate(page);
+    if(["delivery-entry","delivered","delivery-history"].includes(page)) return await renderDelivery(page);
+    if(page.endsWith("-report")) return await renderReport(page);
+    return await renderAdmin(page);
+  } catch(err){
+    console.error(err);
+    $("content").innerHTML = `<div class="panel">${emptyState("Could not load this page: " + (err.message || err))}</div>`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", init);
