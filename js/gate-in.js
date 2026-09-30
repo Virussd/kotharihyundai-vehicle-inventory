@@ -116,11 +116,30 @@ async function openInView(x, reload = loadRecentGateMovements){
   };
 }
 
-/* ---- Print bar shown right after a save ---- */
-function showPrintBar(rows){
-  const el = $("gatePrintBar"); if(!el || !rows.length) return;
-  const mv = [...new Set(rows.map(r => r.movement_type))].join(" / ");
-  el.innerHTML = `<div class="gate-print-bar"><span>✔ ${rows.length} vehicle${rows.length > 1 ? "s" : ""} ${esc(mv)} saved.</span><button class="primary-btn" type="button" id="gatePrintNow">🖨 Print Gate Pass</button><button class="secondary-btn" type="button" id="gatePrintClose" aria-label="Close">✕</button></div>`;
-  $("gatePrintNow").onclick = () => printGatePass(rows);
-  $("gatePrintClose").onclick = () => { el.innerHTML = ""; };
+/* ---- Gate pass photo upload (no printing) ---- */
+async function uploadGatePass(file, key, date, type){
+  const blob = await compressImage(file), ext = blob.type === "image/jpeg" ? "jpg" : (blob.type.split("/")[1] || "jpg");
+  const path = `gatepass/${String(key || "NA").replace(/[^A-Z0-9_-]/gi, "_")}/${date || "nodate"}/${type || "PASS"}_${Date.now()}.${ext}`;
+  const up = await state.supabase.storage.from(GATE_BUCKET).upload(path, blob, {contentType:blob.type || "image/jpeg", upsert:false});
+  if(up.error) throw new Error(up.error.message);
+  return path;
+}
+/* Vehicle IN at Bhilarwadi / Branch => vehicle becomes Available Stock ("In Stock") at that location.
+   Sales / Not Delivered and Delivered vehicles are never moved back. The same rule also runs in the database
+   (trigger in NEW_FEATURES.sql), so this call is a best-effort duplicate for databases without the trigger. */
+async function syncVehicleStock(rows){
+  try {
+    const ins = rows.filter(r => r.vehicle_id && r.movement_type === "IN"); if(!ins.length) return;
+    await getLocations();
+    const cur = await state.supabase.from("vehicles").select("id,status").in("id", [...new Set(ins.map(r => r.vehicle_id))]);
+    if(cur.error) return;
+    const ok = new Set((cur.data || []).filter(v => ["pending", "transit", "stock"].includes(vStage(v))).map(v => v.id)), byLoc = new Map();
+    ins.filter(r => ok.has(r.vehicle_id)).forEach(r => { const k = String(r.location_name || "").toLowerCase(); if(!byLoc.has(k)) byLoc.set(k, []); byLoc.get(k).push(r.vehicle_id); });
+    for(const [k, ids] of byLoc){
+      const loc = (state.locations || []).find(l => String(l.location_name).toLowerCase() === k), patch = {status:"In Stock"};
+      if(loc) patch.location_id = loc.id;
+      await state.supabase.from("vehicles").update(patch).in("id", ids);
+    }
+    VCACHE.rows = null;
+  } catch { /* best effort */ }
 }

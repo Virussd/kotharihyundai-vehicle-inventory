@@ -12,11 +12,13 @@ async function renderAdmin(page){
       <div><label>LOCATION</label><select name="location_id" id="newUserLocation"></select></div>
       <div><label>STATUS</label><select name="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
       <div class="full form-actions"><button class="primary-btn" type="submit">Create User</button></div></form><div id="createUserMessage" class="message"></div></div>
-      <div class="panel"><div class="panel-head"><h3>Users</h3></div><div id="usersTable" class="table-wrap"></div></div>`;
+      <div class="panel"><div class="panel-head"><h3>Users</h3></div><div id="usersTable" class="table-wrap"></div></div>
+      <div class="panel" id="rolesPanel"></div><div id="modal"></div>`;
     const [roles, locs] = await Promise.all([sb.from("roles").select("id,name").order("name"), getLocations()]);
     $("newUserRole").innerHTML = `<option value="">Select role</option>` + (roles.data||[]).map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join("");
     $("newUserLocation").innerHTML = `<option value="">All Locations</option>` + locs.filter(l => l.active !== false).map(l => `<option value="${esc(l.id)}">${esc(l.location_name)}</option>`).join("");
     $("createUserForm").addEventListener("submit", createUser);
+    renderRolesPanel();
     return loadUsers();
   }
   if(page === "assign-roles" || page === "user-status") return renderUserEditor(page);
@@ -27,11 +29,9 @@ async function renderAdmin(page){
       table(["Time","User","Action","Module","Entity","Details"], (r.data||[]).map(x => [fmtDT(x.created_at),x.actor_username,x.action,x.module,x.entity_type,x.details]))}</div></div>`;
     return;
   }
-  if(page === "locations"){
-    const l = await getLocations(true);
-    c.innerHTML = `<div class="panel">${head("Locations")}<div class="table-wrap">${table(["Location","Code","Active"], l.map(x => [x.location_name,x.location_code,x.active===false?"No":"Yes"]))}</div></div>`;
-    return;
-  }
+  if(page === "locations") return renderLocationsAdmin();
+  if(page === "data-manage") return renderDataManage();
+  if(["company","import-config","system-settings"].includes(page)) return renderSettingsPage(page);
   const t = {company:"Company","import-config":"Import Configuration","system-settings":"System Settings"}[page] || "Settings";
   c.innerHTML = `<div class="panel">${head(t)}<div class="notice"><b>Kothari Hyundai</b><p>No configurable options are defined for this section yet.</p></div></div>`;
 }
@@ -55,9 +55,45 @@ async function createUser(e){
 async function loadUsers(){
   if(!$("usersTable")) return;
   await getLocations();
-  const r = await state.supabase.from("user_profiles").select("username,full_name,active,created_at,roles(name),location_id").order("created_at",{ascending:false});
+  const [r, rl] = await Promise.all([state.supabase.from("user_profiles").select("id,username,full_name,active,created_at,role_id,roles(name),location_id").order("created_at",{ascending:false}),
+    state.supabase.from("roles").select("id,name").order("name")]);
+  const ad = state.isAdmin, list = r.data || [], roles = rl.data || [];
+  const roleSel = x => raw(`<select class="inline-sel" data-u-role="${esc(x.id)}" ${ad ? "" : "disabled"}>${roles.map(o => `<option value="${esc(o.id)}" ${o.id === x.role_id ? "selected" : ""}>${esc(o.name)}</option>`).join("")}</select>`);
+  const statSel = x => raw(`<select class="inline-sel" data-u-active="${esc(x.id)}" ${ad ? "" : "disabled"}><option value="true" ${x.active === false ? "" : "selected"}>Active</option><option value="false" ${x.active === false ? "selected" : ""}>Inactive</option></select>`);
   $("usersTable").innerHTML = r.error ? emptyState(r.error.message) :
-    table(["Username","Name","Role","Location","Status","Created"], (r.data||[]).map(x => [x.username,x.full_name,x.roles?.name,x.location_id?locName(x.location_id):"All Locations",statusBadge(x.active===false?"Inactive":"Active"),fmtDT(x.created_at)]));
+    table(["Username","Name","Role","Location","Status","Created",...(ad ? ["Action"] : [])], list.map((x,i) => [x.username,x.full_name,roleSel(x),x.location_id?locName(x.location_id):"All Locations",statSel(x),fmtDT(x.created_at),
+      ...(ad ? [raw(`<button class="table-icon-btn" type="button" data-user-edit="${i}" title="Edit">✎</button><button class="table-icon-btn danger" type="button" data-user-del="${i}" title="Delete user">🗑</button>`)] : [])]));
+  const box = $("usersTable");
+  box.querySelectorAll("[data-user-edit]").forEach(b => b.addEventListener("click", () => openUserEdit(list[+b.dataset.userEdit])));
+  box.querySelectorAll("[data-user-del]").forEach(b => b.addEventListener("click", () => deleteUser(list[+b.dataset.userDel])));
+  // Assign role / user status right in the list (saves instantly)
+  const quick = (sel, mk) => box.querySelectorAll(sel).forEach(s => s.addEventListener("change", async () => {
+    const id = s.dataset.uRole || s.dataset.uActive, patch = mk(s.value);
+    if(state.user?.id === id && patch.active === false){ toast("You cannot deactivate yourself.","error"); return loadUsers(); }
+    const x = await state.supabase.from("user_profiles").update(patch).eq("id", id).select("id");
+    if(x.error || !x.data?.length){ toast(x.error ? x.error.message : "Not saved — only Admin can edit users.","error"); return loadUsers(); }
+    logAudit("UPDATE_USER","users","user",id,patch); toast("Saved.","success");
+  }));
+  quick("[data-u-role]", v => ({role_id:v}));
+  quick("[data-u-active]", v => ({active:v === "true"}));
+}
+async function deleteUser(u){
+  if(!u) return;
+  if(state.user?.id === u.id) return toast("You cannot delete yourself.","error");
+  if(!confirm(`Delete user "${u.username}"?\n\nThe login is removed permanently. This cannot be undone.\n(To stop access but keep the user, set Status to Inactive instead.)`)) return;
+  const {data:{session}} = await state.supabase.auth.getSession();
+  if(!session) return toast("Session expired. Please login again.","error");
+  try {
+    const res = await fetch(`${SUPABASE_CONFIG.url}/functions/v1/delete-user`, {method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":`Bearer ${session.access_token}`,"apikey":SUPABASE_CONFIG.anonKey}, body:JSON.stringify({user_id:u.id})});
+    const out = await res.json().catch(() => ({}));
+    if(!res.ok) return toast(out.error || "Unable to delete user.","error");
+  } catch {                                                   // function not deployed: remove the profile so the user can no longer use the app
+    const d = await state.supabase.from("user_profiles").delete().eq("id", u.id).select("id");
+    if(d.error || !d.data?.length) return toast("Cannot reach the delete-user function (deploy it), and the profile could not be removed: " + (d.error?.message || "no permission"),"error");
+    toast("User profile removed. Deploy the delete-user function to also remove the login.","success");
+  }
+  logAudit("DELETE_USER","users","user",u.id,{username:u.username}); toast(`User ${u.username} deleted.`,"success"); loadUsers();
 }
 async function renderUserEditor(page){
   const sb = state.supabase, byRole = page === "assign-roles";

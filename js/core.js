@@ -7,11 +7,12 @@ const MENU = [
   {section:"MAIN", items:[["dashboard","Dashboard","▦"]], collapsible:false},
   {section:"VEHICLE MANAGEMENT", items:[
     ["vehicles","Vehicle Stock","▤"],["search","Search by Chassis / VIN","⌕"],
-    ["status","Current Status","◉"],["timeline","View Timeline","◷"]
+    ["status","Current Status","◉"],["timeline","View Timeline","◷"],
+    ["documents","Bhilarwadi Documents","▣"]
   ]},
   {section:"DATA IMPORT", items:[
     ["order-import","Order Report Import","⇧"],["purchase-import","Purchase Report Import","⇧"],
-    ["sales-import","Sales Report Import","⇧"],["import-history","Import History","≡"]
+    ["sales-import","Sales Report Import","⇧"],["import-data","Imported Data","☰"],["import-history","Import History","≡"]
   ]},
   {section:"GATE MANAGEMENT", items:[
     ["bhilarwadi","Bhilarwadi In / Out","⇄"],["gate","Branch Vehicle In / Out","⇄"],
@@ -21,14 +22,15 @@ const MENU = [
     ["delivery-entry","Delivery Entry","✓"],["delivered","Delivered Vehicles","✓"],["delivery-history","Delivery History","◷"]
   ]},
   {section:"REPORTS", items:[
-    ["location-report","Location Stock","▥"],["model-report","Model Stock","▥"],
-    ["finance-report","Finance-wise Stock","₹"],["aging-report","Aging Report","◴"],["delivery-report","Delivery Report","✓"],
+    ["location-report","Location wise Stock","▥"],["model-report","Model wise Stock","▥"],
+    ["finance-report","Finance wise Available Stock","₹"],["aging-report","Aging Report","◴"],["delivery-report","Delivery Report","✓"],
     ["pending-report","Pending Order Report","!"],["transit-report","In Transit Report","→"],["gate-report","Gate Movement Report","⇄"],
-    ["dealer-report","Dealer Code-wise Stock","▥"]
+    ["dealer-report","Dealer Code wise Available Stock","▥"]
   ]},
   {section:"ADMINISTRATION", items:[
-    ["users","Create Users & Roles","♙"],["permissions","Permissions","⚿"],
-    ["assign-roles","Assign Roles","↔"],["user-status","User Status","●"],["audit","Audit Logs","⌁"]
+    ["users","Users & Roles","♙"],["permissions","Permissions","⚿"],
+    ["audit","Audit Logs","⌁"],
+    ["data-manage","Data Management","⛁"]
   ]},
   {section:"SETTINGS", items:[
     ["company","Company","⌂"],["locations","Locations","⌖"],
@@ -45,9 +47,9 @@ const ALL_PERMS = ["dashboard.view","vehicle.view","vehicle.update","import.orde
 
 const PAGE_PERM = {
   dashboard:"dashboard.view",
-  vehicles:"vehicle.view", search:"vehicle.view", status:"vehicle.view", timeline:"vehicle.view",
+  vehicles:"vehicle.view", search:"vehicle.view", status:"vehicle.view", timeline:"vehicle.view", documents:"vehicle.view",
   "order-import":"import.order", "purchase-import":"import.purchase", "sales-import":"import.sales",
-  "import-history":["import.order","import.purchase","import.sales"],
+  "import-history":["import.order","import.purchase","import.sales"], "import-data":["import.order","import.purchase","import.sales"],
   bhilarwadi:"gate.inout", gate:"gate.inout", register:"gate.inout", "gate-pass":"gate.pass",
   "delivery-entry":"delivery.manage", delivered:"delivery.manage", "delivery-history":"delivery.manage",
   users:"users.manage", "assign-roles":"users.manage", "user-status":"users.manage", audit:"users.manage",
@@ -70,8 +72,10 @@ const state = {
   supabase:null, connected:false, locations:null, gateSelectedVehicleId:null
 };
 
+const ADMIN_ONLY = new Set(["data-manage"]);          // Delete / Reset tools: Admin role only
 function can(page){
   if(state.isAdmin) return true;
+  if(ADMIN_ONLY.has(page)) return false;
   const need = PAGE_PERM[page];
   if(!need) return false;
   return (Array.isArray(need) ? need : [need]).some(c => state.perms.has(c));
@@ -97,6 +101,12 @@ function table(headers, rows, footer){
     rows.map(r => `<tr>${r.map(c => `<td>${cell(c)}</td>`).join("")}</tr>`).join("")}</tbody>${foot}</table>`;
 }
 function emptyState(text){ return `<div class="empty-state"><div class="empty-icon">⌁</div><p>${esc(text)}</p></div>`; }
+// Short Indian format for dashboard cards: 22,06,743.96 -> ₹ 22.07 L, 1,25,00,000 -> ₹ 1.25 Cr
+function moneyShort(v){
+  const n = Number(v || 0), a = Math.abs(n), s = n < 0 ? "-" : "", f = (x, u) => `${s}₹ ${Number(x.toFixed(2))} ${u}`;
+  if(a >= 1e7) return f(a / 1e7, "Cr"); if(a >= 1e5) return f(a / 1e5, "L"); if(a >= 1e3) return f(a / 1e3, "K");
+  return `${s}₹ ${Math.round(a).toLocaleString("en-IN")}`;
+}
 function money(v){ return "₹ " + Number(v || 0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtDT(v){ return v ? new Date(v).toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"}) : "-"; }
 function fmtD(v){
@@ -123,8 +133,8 @@ function statusClass(s){
   const k = String(s || "").toLowerCase();
   if(k.includes("pending")) return "warn";
   if(k.includes("transit")) return "info";
+  if(/not[\s\-_\/]*deliver|undeliver/.test(k) || k.includes("bill") || k.includes("sales") || k.includes("sold")) return "purple";   // Sales / Not Delivered
   if(k.includes("deliver")) return "ok";
-  if(k.includes("bill") || k.includes("sold")) return "purple";
   return "";
 }
 function statusBadge(s){ return raw(`<span class="badge ${statusClass(s)}">${esc(s || "-")}</span>`); }
@@ -169,6 +179,8 @@ function exportSheet(filename, headers, rows){
   XLSX.utils.book_append_sheet(wb, ws, "Data");
   XLSX.writeFile(wb, `${filename}-${todayLocal()}.xlsx`);
 }
+// Shared by dashboard windows, gate edit dialogs, IN-details. Creates #modal if the page has none.
+function openModal(html){ let m = $("modal"); if(!m){ m = document.createElement("div"); m.id = "modal"; document.body.appendChild(m); } m.innerHTML = html; }
 function closeModal(){ const m = $("modal"); if(m) m.innerHTML = ""; }
 async function logAudit(action, module, entityType, entityId, details){   // best effort; only Admin can insert (RLS)
   try {
@@ -252,7 +264,7 @@ async function logout(){
   showLogin();
 }
 function showLogin(){
-  state.user = null; state.profile = null; state.role = ""; state.isAdmin = false; state.perms = new Set(); state.locations = null;
+  state.user = null; state.profile = null; state.role = ""; state.isAdmin = false; state.perms = new Set(); state.locations = null; state.settings = null;
   $("loginView").classList.remove("hidden");
   $("appView").classList.add("hidden");
   $("content").innerHTML = "";
@@ -281,6 +293,7 @@ async function showApp(user){
   } catch(err){ console.warn(err); }
 
   await loadPermissions();
+  if(typeof loadSettings === "function") await loadSettings();
   $("userName").textContent = displayName;
   $("userName").title = state.role || "No role";
   renderNav();
@@ -342,7 +355,7 @@ function navigate(page){
   state.page = page;
   const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
   const parent = btn?.closest(".nav-collapsible");
-  if(parent){
+  if(btn){                                   // Dashboard (no parent group) closes every section
     document.querySelectorAll(".nav-collapsible").forEach(g => {
       const open = g === parent;
       g.classList.toggle("collapsed", !open);
@@ -369,7 +382,8 @@ async function loadPage(page){
     if(page === "dashboard") return await renderDashboard();
     if(["vehicles","search","status"].includes(page)) return await renderVehicles(page);
     if(page === "timeline") return await renderTimeline();
-    if(["order-import","purchase-import","sales-import","import-history"].includes(page)) return await renderImport(page);
+    if(page === "documents") return await renderDocuments();
+    if(["order-import","purchase-import","sales-import","import-history","import-data"].includes(page)) return await renderImport(page);
     if(["bhilarwadi","gate","gate-pass","register"].includes(page)) return await renderGate(page);
     if(["delivery-entry","delivered","delivery-history"].includes(page)) return await renderDelivery(page);
     if(page.endsWith("-report")) return await renderReport(page);

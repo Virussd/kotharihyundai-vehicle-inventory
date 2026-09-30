@@ -54,10 +54,17 @@ const EXCEL_FIELDS = [
   ["grn_no","GRN No","text"],
   ["grn_date","GRN Date","date"],
   ["sale_tax","Sale Tax","money"],
-  ["fob_key","FOB Key","text"]
+  ["fob_key","FOB Key","text"],
+  // ---- Sales report (Bill Inv Date, Vin No, Engine no, Customer name, Bill No., TL, SC, Bill Location, Model, Variant, COLOUR, Total Bill Amount)
+  ["bill_date","Bill Inv Date","date",["bill date","bill invoice date"]],
+  ["bill_no","Bill No.","text",["bill no","bill number"]],
+  ["team_leader","TL","text",["team leader"]],
+  ["executive","SC","text",["sales consultant","sales executive"]],
+  ["sales_location","Bill Location","text"],
+  ["bill_amount","Total Bill Amount","money",["bill amount"]]
 ];
 // Not in the Excel files but kept on the vehicle record
-const DERIVED_FIELDS = [["chassis_no","Chassis No","text"],["stock_value","Stock Value","money"],["purchase_date","Purchase Date","date"],["status","Status","text"]];
+const DERIVED_FIELDS = [["delivery_no","Delivery No","text"],["delivery_date","Delivery Date","date"],["delivery_location","Delivery Location","text"],["chassis_no","Chassis No","text"],["stock_value","Stock Value","money"],["purchase_date","Purchase Date","date"],["status","Status","text"]];
 const FIELD_HEADING = Object.fromEntries([...EXCEL_FIELDS, ...DERIVED_FIELDS].map(f => [f[0], f[1]]));
 const FIELD_TYPE = Object.fromEntries([...EXCEL_FIELDS, ...DERIVED_FIELDS].map(f => [f[0], f[2]]));
 

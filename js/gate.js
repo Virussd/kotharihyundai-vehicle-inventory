@@ -3,7 +3,7 @@
    GATE: Bhilarwadi / Branch In-Out, In-Out Register, Gate Pass, scanner
    ===================================================================== */
 
-const GATE_HELP = "VIN चे शेवटचे 6 digits टाका → Purchase Report suggestions. Match नसेल तर manual entry.";
+const GATE_HELP = "";
 const GATE_COLS_ALL = ["#","Date","Movement","Location","VIN Number","Engine No.","Variant","Color","Finance Bank","Reason","Driver","Remarks"];
 // Bhilarwadi has no driver details; Branch and the register keep them.
 const gateCols = gate => gate === "Bhilarwadi" ? GATE_COLS_ALL.filter(c => c !== "Driver") : GATE_COLS_ALL;
@@ -35,12 +35,11 @@ async function renderGate(page){
     <div class="panel gate-entry-panel">
       <div class="gate-panel-head"><h3>${esc(title)}</h3>
         <div class="gate-tabs"><button type="button" id="tabSingle" class="gate-tab active">Single Entry</button><button type="button" id="tabBulk" class="gate-tab">Bulk In / Out</button></div></div>
-      <div id="gatePrintBar"></div>
       <div id="gateSingle">
       <form id="gateForm" class="gate-form-grid">
         <input type="hidden" name="gate_name" value="${esc(gateName)}">
         <div class="gate-field"><label for="gateLocation">LOCATION <span>*</span></label>${locField}</div>
-        <div class="gate-field gate-vin-field"><label for="gateVin">VIN NUMBER <span>*</span></label><input name="vin" id="gateVin" required autocomplete="off" placeholder="Enter VIN / last 6 digits"><div id="gateVinSuggestions" class="gate-suggestions"></div></div>
+        <div class="gate-field gate-vin-field"><label for="gateVin">VIN NUMBER <span>*</span></label><div class="gate-input-icon"><input name="vin" id="gateVin" required autocomplete="off" placeholder="Enter VIN / last 6 digits"><button type="button" id="gateScan" title="Scan VIN barcode" aria-label="Scan VIN barcode">📷 Scan</button></div><div id="gateVinSuggestions" class="gate-suggestions"></div></div>
         <div class="gate-field"><label for="gateEngineNo">ENGINE NO.</label><input name="engine_no" id="gateEngineNo" placeholder="Auto / Manual"></div>
         <div class="gate-field"><label for="gateVariant">VARIANT</label><input name="variant" id="gateVariant" placeholder="Auto / Manual"></div>
         <div class="gate-field"><label for="gateColor">COLOR</label><input name="color" id="gateColor" placeholder="Auto / Manual"></div>
@@ -51,16 +50,18 @@ async function renderGate(page){
         ${showDriver ? `<div class="gate-field"><label for="gateDriver">DRIVER NAME</label><input name="driver_name" id="gateDriver" autocomplete="off"></div>
         <div class="gate-field"><label for="gateDriverMobile">DRIVER MOBILE</label><input name="driver_mobile" id="gateDriverMobile" inputmode="tel" autocomplete="off"></div>` : ""}
         <div class="gate-field gate-remarks-field"><label for="gateRemarks">REMARKS</label><textarea name="remarks" id="gateRemarks" placeholder="Enter remarks"></textarea></div>
+        <div class="gate-field gate-pass-field"><label for="gatePassFile">GATE PASS (PHOTO)</label><input type="file" accept="image/*" id="gatePassFile" class="in-file"><small id="gatePassFile_n" class="in-note"></small></div>
         ${gateName === "Bhilarwadi" ? `<div class="gate-in-wrap">${inBlockHtml("gi")}</div>` : ""}
         <div class="gate-form-actions"><span id="purchaseLookupMsg" class="form-help">${GATE_HELP}</span><div class="gate-action-buttons"><button class="secondary-btn" type="button" id="gateClear">↻ Clear</button><button class="primary-btn" type="submit" id="gateSave">▣ Save Gate Movement</button></div></div>
       </form></div>
       <div id="gateBulk" hidden>${bulkHtml(showDriver, gateName)}</div>
     </div>
-    <div class="panel gate-recent-panel"><div class="gate-recent-head"><h3>Recent Gate Movements</h3>${gateFiltersHtml()}</div><div id="recentGateMovements" class="table-wrap"></div></div>
+    <div class="panel gate-recent-panel"><div class="gate-recent-head"><h3>Recent Gate Movements</h3>${gateFiltersHtml()}</div>${gateFilterPanel()}<div id="recentGateMovements" class="table-wrap"></div></div>
     <div id="modal"></div>
   </div>`;
   $("gateReceiptDate").value = todayLocal();
   $("gateForm").addEventListener("submit", saveGate);
+  $("gateScan").addEventListener("click", () => openScanner(v => { $("gateVin").value = v; $("gateVin").dispatchEvent(new Event("input")); toast("Scanned " + v, "success"); }));
   $("gateClear").addEventListener("click", clearGateForm);
   let lookupTimer;
   $("gateVin").addEventListener("input", () => { clearTimeout(lookupTimer); lookupTimer = setTimeout(() => loadPurchaseVehicleDetails($("gateVin").value.trim(), true), 250); });
@@ -72,9 +73,13 @@ async function renderGate(page){
 }
 
 function gateFiltersHtml(){
-  return `<div class="gate-filters"><input id="gateSearchText" type="search" placeholder="VIN / last 6 digits" aria-label="Search VIN"><input id="gateFromDate" type="date" title="From Date" aria-label="From date"><span>→</span><input id="gateToDate" type="date" title="To Date" aria-label="To date">
-    <select id="gateMovementFilter" aria-label="Movement"><option value="ALL">All</option><option value="IN">IN</option><option value="OUT">OUT</option></select>
-    <button class="primary-btn" type="button" id="gateSearch">⌕ Search</button><button class="secondary-btn" type="button" id="gateExport">⤓ Export</button></div>`;
+  return `<div class="filter-wrap">${filterBtn("gateFilter")}<button class="secondary-btn" type="button" id="gateExport">⤓ Export</button></div>`;
+}
+function gateFilterPanel(){
+  return filterPanel("gateFilter", `<div class="filter-grid"><label>VIN / last 6 digits<input id="gateSearchText" type="search" placeholder="VIN"></label>
+    <label>Movement<select id="gateMovementFilter"><option value="ALL">All</option><option value="IN">IN</option><option value="OUT">OUT</option></select></label>
+    <label>From date<input id="gateFromDate" type="date"></label><label>To date<input id="gateToDate" type="date"></label>
+    <div class="filter-actions"><button class="primary-btn" type="button" id="gateSearch">Apply</button></div></div>`);
 }
 function bindGateFilters(loader){
   $("gateSearch").addEventListener("click", loader);
@@ -125,6 +130,7 @@ function clearGateForm(){
   form.reset();
   state.gateSelectedVehicleId = null;
   $("gateReceiptDate").value = todayLocal();
+  document.querySelectorAll("#gateForm .in-note").forEach(n => { n.textContent = ""; });
   hideGateSuggestions();
   setLookupMsg(GATE_HELP);
   resetGateIn();
@@ -163,11 +169,17 @@ async function saveGate(e){
       try { Object.assign(payload, await inExtras(finalVin, payload.receipt_dt, readIn("gi"))); }
       catch(err){ toast("Photo upload failed: " + err.message, "error"); return; }
     }
+    const passFile = $("gatePassFile")?.files?.[0];
+    if(passFile){
+      btn.textContent = "Uploading gate pass…";
+      try { payload.gate_pass_file = await uploadGatePass(passFile, finalVin, payload.receipt_dt, payload.movement_type); }
+      catch(err){ toast("Gate pass upload failed: " + err.message, "error"); return; }
+    }
     const ins = await state.supabase.from("gate_movements").insert(payload);
-    if(ins.error){ toast(ins.error.message,"error"); return; }
+    if(ins.error){ toast(ins.error.message + (/gate_pass_file|schema cache/i.test(ins.error.message) ? " — " + GATEPASS_SQL_HINT : ""),"error"); return; }
+    await syncVehicleStock([payload]);
     toast(vehicleId ? "Gate movement saved." : "Gate movement saved with manual vehicle details.","success");
     clearGateForm();
-    showPrintBar([payload]);
     await loadRecentGateMovements();
   } finally { btn.disabled = false; btn.textContent = "▣ Save Gate Movement"; }
 }
@@ -208,7 +220,7 @@ function exportGateRows(){
 
 /* ---- In-Out Register ------------------------------------------------------------ */
 async function renderGateRegister(){
-  $("content").innerHTML = `<div class="panel gate-recent-panel"><div class="gate-recent-head"><h3>In-Out Register</h3>${gateFiltersHtml()}</div><div id="gateRegister" class="table-wrap">${emptyState("Loading...")}</div></div>`;
+  $("content").innerHTML = `<div class="panel gate-recent-panel"><div class="gate-recent-head"><h3>In-Out Register</h3>${gateFiltersHtml()}</div>${gateFilterPanel()}<div id="gateRegister" class="table-wrap">${emptyState("Loading...")}</div></div>`;
   bindGateFilters(loadGateRegister);
   return loadGateRegister();
 }
@@ -217,49 +229,7 @@ async function loadGateRegister(){
   if(!state.supabase){ box.innerHTML = emptyState("Connect Supabase to view the register."); return; }
   try {
     GATE_GATE = ""; GATE_ROWS = await fetchGateRows(500);
-    box.innerHTML = table(GATE_COLS_ALL, GATE_ROWS.map((x,i) => gatePlainRow(x, i)));
+    mountPaged(box, {headers:GATE_COLS_ALL, rows:GATE_ROWS.map((x,i) => gatePlainRow(x, i)), size:50, empty:"No gate movements yet."});
   } catch(err){ box.innerHTML = emptyState("Register unavailable: " + err.message); }
 }
 
-/* ---- Gate Pass (printable) ----------------------------------------------------------- */
-function renderGatePass(){
-  $("content").innerHTML = `<div class="panel gate-recent-panel"><div class="gate-recent-head"><h3>Gate Pass</h3>
-    <div class="gate-filters"><input id="gateSearchText" type="search" placeholder="VIN / last 6 digits" aria-label="Search VIN"><button class="primary-btn" type="button" id="gateSearch">⌕ Find</button></div></div>
-    <p class="form-help gatepass-help">Search a vehicle, then print the gate pass for a recorded movement.</p><div id="gatePassResults" class="table-wrap">${emptyState("Search by VIN.")}</div></div>`;
-  const run = async () => {
-    const box = $("gatePassResults");
-    if(!$("gateSearchText").value.trim()){ box.innerHTML = emptyState("Enter a VIN."); return; }
-    try {
-      GATE_ROWS = await fetchGateRows(20);
-      box.innerHTML = table([...GATE_COLS_ALL.slice(0,10), "Print"], GATE_ROWS.map((x,i) => [...gatePlainRow(x,i).slice(0,10), raw(`<button class="secondary-btn" type="button" data-pass="${i}">🖨 Print</button>`)]));
-      box.querySelectorAll("[data-pass]").forEach(b => b.addEventListener("click", () => printGatePass(GATE_ROWS[Number(b.dataset.pass)])));
-    } catch(err){ box.innerHTML = emptyState(err.message); }
-  };
-  $("gateSearch").addEventListener("click", run);
-  $("gateSearchText").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); run(); } });
-}
-function printGatePass(input){
-  const list = (Array.isArray(input) ? input : [input]).filter(Boolean); if(!list.length) return;
-  const x = list[0], multi = list.length > 1;
-  const w = window.open("", "gatepass", "width=820,height=900");
-  if(!w){ toast("Allow pop-ups to print the gate pass.","error"); return; }
-  const row = (k, v) => `<tr><th>${esc(k)}</th><td>${esc(v || "-")}</td></tr>`;
-  const mv = [...new Set(list.map(r => r.movement_type).filter(Boolean))].join(" / ");
-  const drv = x.gate_name === "Bhilarwadi" ? "" : row("Driver", [x.driver_name, x.driver_mobile].filter(Boolean).join(" / "));
-  const tyres = n => [1,2,3,4].map(i => n["tyre_serial_" + i]).filter(Boolean).join(", ");
-  const common = `${row("Date", fmtD(x.receipt_dt || x.created_at))}${row("Gate", x.gate_name)}${row("Location", gateLocOf(x))}${row("Reason", x.movement_reason)}${drv}`;
-  const body = multi
-    ? `<table>${common}${row("Total Vehicles", list.length)}${row("Remarks", x.remarks)}</table>
-       <table class="veh"><thead><tr><th>#</th><th>Movement</th><th>VIN</th><th>Engine No.</th><th>Variant</th><th>Color</th><th>Finance Bank</th></tr></thead><tbody>${list.map((v,i) => `<tr><td>${i+1}</td><td>${esc(v.movement_type)}</td><td>${esc(v.vin)}</td><td>${esc(v.engine_no || "-")}</td><td>${esc(v.variant || "-")}</td><td>${esc(v.color || "-")}</td><td>${esc(v.finance_bank || "-")}</td></tr>`).join("")}</tbody></table>`
-    : `<table>${common}${x.vehicle_no ? row("Vehicle No.", x.vehicle_no) : ""}${row("VIN", x.vin)}${row("Engine No.", x.engine_no)}${row("Variant", x.variant)}${row("Color", x.color)}${row("Finance Bank", x.finance_bank)}${tyres(x) ? row("Tyre Serial Nos.", tyres(x)) : ""}${x.ev_battery_no ? row("EV Battery No.", x.ev_battery_no) : ""}${row("Remarks", x.remarks)}</table>`;
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Gate Pass</title>
-  <style>body{font-family:Inter,"Segoe UI",Arial,sans-serif;padding:32px;color:#111}h1{margin:0;font-size:22px}h2{margin:4px 0 20px;font-size:14px;font-weight:600;color:#555}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px}th,td{border:1px solid #999;padding:9px 11px;text-align:left;font-size:13px}th{width:32%;background:#f3f4f6}
-  table.veh th{width:auto}.sign{display:flex;justify-content:space-between;margin-top:70px;font-size:13px}.sign div{border-top:1px solid #333;padding-top:6px;width:30%;text-align:center}
-  .tag{display:inline-block;padding:3px 10px;border:1px solid #111;border-radius:4px;font-weight:700}</style></head><body>
-  <h1>KOTHARI HYUNDAI</h1><h2>Vehicle Gate Pass &nbsp; <span class="tag">${esc(mv)}</span></h2>
-  ${body}
-  <div class="sign"><div>Prepared by</div><div>Security</div><div>Authorised signatory</div></div></body></html>`);
-  w.document.close(); w.focus();
-  setTimeout(() => w.print(), 300);
-}

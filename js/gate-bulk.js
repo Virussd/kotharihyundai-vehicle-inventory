@@ -9,7 +9,6 @@ const gateOfPage = () => state.page === "bhilarwadi" ? "Bhilarwadi" : state.page
 const nz = v => { const t = String(v ?? "").trim(); return t === "" ? null : t; };
 const toItem = (v, fromMove) => ({vehicle_id: fromMove ? (v.vehicle_id || null) : v.id, vin:v.vin, engine_no:v.engine_no || "",
   variant:v.variant || "", color:v.color || "", finance_bank:v.finance_bank || v.finance_company || "", model:v.model || ""});
-function openModal(html){ let m = $("modal"); if(!m){ m = document.createElement("div"); m.id = "modal"; document.body.appendChild(m); } m.innerHTML = html; }
 
 /* ---------------- Bulk In / Out ---------------- */
 const BULK_LOC = gate => gate === "Bhilarwadi" ? locSelect("bkLocation","bkLocation","Bhilarwadi") : locSelect("bkLocation","bkLocation","","— Select Location —");
@@ -22,9 +21,10 @@ function bulkHtml(showDriver = true, gate = ""){ return `<div class="bulk-wrap">
     ${showDriver ? `<div class="gate-field"><label>DRIVER NAME</label><input id="bkDriver"></div>
     <div class="gate-field"><label>DRIVER MOBILE</label><input id="bkMobile" inputmode="tel"></div>` : ""}
     <div class="gate-field gate-remarks-field"><label>REMARKS</label><textarea id="bkRemarks"></textarea></div>
+    <div class="gate-field gate-pass-field"><label>GATE PASS (PHOTO) — applies to all selected vehicles</label><input type="file" accept="image/*" id="bkPassFile" class="in-file"><small id="bkPassFile_n" class="in-note"></small></div>
   </div>
   <div class="bulk-block"><b>1. Chassis निवडा</b>
-    <div class="gate-filters"><input id="bkSearch" type="search" placeholder="VIN / last 6 digits" style="width:180px"><button class="primary-btn" type="button" id="bkFind">⌕ Search</button><button class="secondary-btn" type="button" id="bkInside">Currently IN (this gate)</button></div>
+    <div class="gate-filters"><input id="bkSearch" type="search" placeholder="VIN / last 6 digits" style="width:180px"><button class="primary-btn" type="button" id="bkFind">⌕ Search</button><button class="secondary-btn" type="button" id="bkScan">📷 Scan</button><button class="secondary-btn" type="button" id="bkInside">Currently IN (this gate)</button></div>
     <textarea id="bkPaste" class="bulk-paste" placeholder="किंवा multiple VIN / last 6 digits paste करा (line / comma ने वेगळे)"></textarea>
     <button class="secondary-btn" type="button" id="bkPasteAdd">＋ Add pasted list</button>
     <div id="bkResults" class="table-wrap"></div></div>
@@ -39,6 +39,7 @@ function initBulk(gate, showDriver = true){
   $("bkFind").onclick = bulkSearch;
   $("bkSearch").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); bulkSearch(); } });
   $("bkInside").onclick = bulkInside; $("bkPasteAdd").onclick = bulkPaste;
+  $("bkScan").onclick = () => openScanner(bulkAddScanned);
   $("bkClear").onclick = () => { BULK.items = []; drawBulkList(); };
   $("bkSave").onclick = saveBulk;
   $("bkType").onchange = drawBulkList;
@@ -50,6 +51,11 @@ async function bulkSearch(){
   const r = await state.supabase.from("vehicles").select("*").ilike("vin", `%${q}%`).limit(50);
   if(r.error){ toast(r.error.message,"error"); return; }
   showPick((r.data || []).map(v => toItem(v)));
+}
+async function bulkAddScanned(vin){       // scanned VIN: add from stock, or as a new vehicle (manual details)
+  const r = await state.supabase.from("vehicles").select("*").eq("vin", vin).limit(1);
+  if(!r.error && r.data?.length) addItem(toItem(r.data[0])); else addItem({vin, vehicle_id:null});
+  toast("Added " + vin + (r.data?.length ? "" : " (not in stock report — new vehicle)"), "success"); drawBulkList();
 }
 async function bulkInside(){
   const r = await state.supabase.from("gate_movements").select("*").eq("gate_name", BULK.gate).order("created_at",{ascending:false}).limit(3000);
@@ -114,15 +120,21 @@ async function saveBulk(){
       try { for(let i = 0; i < items.length; i++) if(items[i].inx){ btn.textContent = `Uploading ${i+1}/${items.length}…`; extras[i] = await inExtras(items[i].vin, date, items[i].inx); } }
       catch(err){ toast("Photo upload failed: " + err.message, "error"); return; }
     }
+    let passPath = null; const passFile = $("bkPassFile")?.files?.[0];
+    if(passFile){
+      btn.textContent = "Uploading gate pass…";
+      try { passPath = await uploadGatePass(passFile, "BULK", date, type); } catch(err){ toast("Gate pass upload failed: " + err.message, "error"); return; }
+    }
     const rows = items.map((it,i) => ({vehicle_id:it.vehicle_id || null, vin:it.vin,
       engine_no:nz(it.engine_no), variant:nz(it.variant), color:nz(it.color), finance_bank:nz(it.finance_bank), movement_type:type, location_name:location,
       movement_reason:$("bkReason").value, receipt_dt:date, remarks:nz($("bkRemarks").value), gate_name:BULK.gate,
-      driver_name:BULK.driver ? nz($("bkDriver")?.value) : null, driver_mobile:BULK.driver ? nz($("bkMobile")?.value) : null, ...extras[i]}));
+      driver_name:BULK.driver ? nz($("bkDriver")?.value) : null, driver_mobile:BULK.driver ? nz($("bkMobile")?.value) : null, ...(passPath ? {gate_pass_file:passPath} : {}), ...extras[i]}));
     const ins = await state.supabase.from("gate_movements").insert(rows);
-    if(ins.error){ toast(ins.error.message,"error"); return; }
+    if(ins.error){ toast(ins.error.message + (/gate_pass_file|schema cache/i.test(ins.error.message) ? " — " + GATEPASS_SQL_HINT : ""),"error"); return; }
+    await syncVehicleStock(rows);
     logAudit("BULK_GATE_MOVEMENT","gate","gate_movements",null,{gate:BULK.gate,movement:type,count:rows.length,vins});
     toast(`${rows.length} vehicles ${type} saved.`,"success");
-    BULK.items = []; $("bkResults").innerHTML = ""; drawBulkList(); showPrintBar(rows); loadRecentGateMovements();
+    BULK.items = []; $("bkResults").innerHTML = ""; $("bkPassFile").value = ""; $("bkPassFile_n").textContent = ""; drawBulkList(); loadRecentGateMovements();
   } finally { btn.disabled = false; btn.textContent = "▣ Save Bulk Movement"; }
 }
 
@@ -135,25 +147,28 @@ async function loadRecentGateMovements(){
 }
 function showGateTable(target, rows, reload){
   const ed = canEditGate(), bh = GATE_GATE === "Bhilarwadi";
-  const cols = [...gateCols(GATE_GATE), ...(bh ? ["IN Details"] : []), "Print"];
-  const bar = ed && rows.length ? `<div class="bulk-bar"><button class="secondary-btn" type="button" data-gt="all">☑ Select all</button><button class="secondary-btn" type="button" data-gt="print">🖨 Print selected</button><button class="secondary-btn" type="button" data-gt="edit">✎ Edit selected</button><button class="secondary-btn danger" type="button" data-gt="del">🗑 Delete selected</button></div>` : "";
-  target.innerHTML = bar + table(ed ? ["✓", ...cols, "Action"] : cols, rows.map((x,i) => {
+  const cols = [...gateCols(GATE_GATE), ...(bh ? ["IN Details"] : []), "Gate Pass"];
+  const bar = ed && rows.length ? `<div class="bulk-bar"><button class="secondary-btn" type="button" data-gt="all">☑ Select all (this page)</button><button class="secondary-btn" type="button" data-gt="edit">✎ Edit selected</button><button class="secondary-btn danger" type="button" data-gt="del">🗑 Delete selected</button></div>` : "";
+  target.innerHTML = bar + `<div id="gtBody"></div>`;
+  const body = target.querySelector("#gtBody");
+  const cells = rows.map((x,i) => {
     const extra = [...(bh ? [x.movement_type === "IN" ? raw(`<button class="table-icon-btn" type="button" title="Photos / tyre serials / EV battery" data-in-view="${i}">📷 ${inCount(x)}/6</button>`) : ""] : []),
-      raw(`<button class="table-icon-btn" type="button" title="Print Gate Pass" data-gate-print="${i}">🖨</button>`)];
+      x.gate_pass_file ? raw(`<button class="table-icon-btn" type="button" title="Download gate pass" data-gate-dl="${i}">⬇</button>`) : ""];
     const r = [...gatePlainRow(x, i, GATE_GATE), ...extra]; if(!ed) return r;
     return [raw(`<input type="checkbox" class="gt-chk" data-i="${i}">`), ...r,
       raw(`<button class="table-icon-btn" type="button" title="Edit" data-gate-edit="${i}">✎</button><button class="table-icon-btn danger" type="button" title="Delete" data-gate-del="${i}">🗑</button>`)];
-  }));
-  target.querySelectorAll("[data-gate-print]").forEach(b => b.addEventListener("click", () => printGatePass(rows[+b.dataset.gatePrint])));
-  target.querySelectorAll("[data-in-view]").forEach(b => b.addEventListener("click", () => openInView(rows[+b.dataset.inView], reload)));
+  });
+  mountPaged(body, {headers:ed ? ["✓", ...cols, "Action"] : cols, rows:cells, size:25, empty:"No gate movements yet.", onDraw:() => {
+    body.querySelectorAll("[data-in-view]").forEach(b => b.addEventListener("click", () => openInView(rows[+b.dataset.inView], reload)));
+    body.querySelectorAll("[data-gate-dl]").forEach(b => b.addEventListener("click", () => { const x = rows[+b.dataset.gateDl]; downloadPath(x.gate_pass_file, `GatePass_${x.vin}_${x.movement_type}_${x.receipt_dt || ""}.${x.gate_pass_file.split(".").pop()}`); }));
+    body.querySelectorAll("[data-gate-edit]").forEach(b => b.addEventListener("click", () => openGateEdit(rows[+b.dataset.gateEdit], reload)));
+    body.querySelectorAll("[data-gate-del]").forEach(b => b.addEventListener("click", () => deleteGateMovements([rows[+b.dataset.gateDel]], reload)));
+  }});
   if(!ed) return;
-  const picked = () => [...target.querySelectorAll(".gt-chk:checked")].map(c => rows[+c.dataset.i]);
-  target.querySelectorAll("[data-gate-edit]").forEach(b => b.addEventListener("click", () => openGateEdit(rows[+b.dataset.gateEdit], reload)));
-  target.querySelectorAll("[data-gate-del]").forEach(b => b.addEventListener("click", () => deleteGateMovements([rows[+b.dataset.gateDel]], reload)));
-  target.querySelector('[data-gt="all"]')?.addEventListener("click", () => { const cs = [...target.querySelectorAll(".gt-chk")], on = cs.some(c => !c.checked); cs.forEach(c => { c.checked = on; }); });
-  target.querySelector('[data-gt="print"]')?.addEventListener("click", () => { const p = picked(); if(!p.length) return toast("आधी rows निवडा.","error"); printGatePass(p); });
-  target.querySelector('[data-gt="edit"]')?.addEventListener("click", () => { const p = picked(); if(!p.length) return toast("आधी rows निवडा.","error"); p.length === 1 ? openGateEdit(p[0], reload) : openGateBulkEdit(p, reload); });
-  target.querySelector('[data-gt="del"]')?.addEventListener("click", () => { const p = picked(); if(!p.length) return toast("आधी rows निवडा.","error"); deleteGateMovements(p, reload); });
+  const picked = () => [...body.querySelectorAll(".gt-chk:checked")].map(c => rows[+c.dataset.i]);
+  target.querySelector('[data-gt="all"]')?.addEventListener("click", () => { const cs = [...body.querySelectorAll(".gt-chk")], on = cs.some(c => !c.checked); cs.forEach(c => { c.checked = on; }); });
+  target.querySelector('[data-gt="edit"]')?.addEventListener("click", () => { const p = picked(); if(!p.length) return toast("Select rows first.","error"); p.length === 1 ? openGateEdit(p[0], reload) : openGateBulkEdit(p, reload); });
+  target.querySelector('[data-gt="del"]')?.addEventListener("click", () => { const p = picked(); if(!p.length) return toast("Select rows first.","error"); deleteGateMovements(p, reload); });
 }
 const gateSel = (id, name, opts, cur, blank) => `<select id="${id}" name="${name}">${blank ? '<option value="">— no change —</option>' : ""}${opts.map(o => `<option ${o === cur ? "selected" : ""}>${o}</option>`).join("")}</select>`;
 function openGateEdit(x, reload = loadRecentGateMovements){
