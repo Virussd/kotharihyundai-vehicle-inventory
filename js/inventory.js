@@ -96,9 +96,9 @@ async function loadDashboardData(){
   const box = id => $(id), fail = msg => ["financeDash","dealerDash","statusDash","locationTable","ageDash","modelDash"].forEach(i => { if(box(i)) box(i).innerHTML = emptyState("Could not load: " + msg); });
   if(allRes.error){ fail(allRes.error.message || allRes.error); }
   else {
-    const all = allRes.data, sum = {total:{n:all.length, v:0}};
+    const all = allRes.data, sum = {total:{n:0, v:0}};
     STAGES.forEach(([k]) => { sum[k] = {n:0, v:0}; });
-    all.forEach(v => { const st = vStage(v), a = vAmt(v); sum[st].n++; sum[st].v += a; sum.total.v += a; });
+    all.forEach(v => { const st = vStage(v), a = vAmt(v); sum[st].n++; sum[st].v += a; if(st !== "delivered"){ sum.total.n++; sum.total.v += a; } });
     [["total","stat0"],["stock","stat1"],["transit","stat2"],["pending","stat3"],["bill","stat4"],["delivered","stat5"]].forEach(([k,id]) => {
       if(box(id)) box(id).textContent = sum[k].n.toLocaleString("en-IN"); if(box(id + "v")) box(id + "v").textContent = moneyShort(sum[k].v); });
     const bindDim = el => el?.querySelectorAll("[data-dim]").forEach(b => b.addEventListener("click", () => openDimModal(b.dataset.dim, b.dataset.key, b.dataset.stage)));
@@ -170,7 +170,7 @@ const DASH_COLS = {
   delivered:[col("Delivery No","delivery_no_c"),col("Delivery Date","delivery_date","date"),col("VIN No.","vin"),col("Model","model"),col("Variant","variant"),col("Customer","customer_name"),col("Financier Name","finance_company"),col("Location","location_name"),col("Stock Value","stock_value","money")]
 };
 const DASH_KIND = {
-  total:{title:"Total Order Stock — all vehicles from order to delivery", f:() => true},
+  total:{title:"Total Order Stock — Available + Pending Order + In Transit + Sales / Not Delivered", f:v => vStage(v) !== "delivered"},
   stock:{title:"Available Stock", f:v => vStage(v) === "stock"},
   transit:{title:"In Transit", f:v => vStage(v) === "transit"},
   pending:{title:"Pending Order", f:v => vStage(v) === "pending"},
@@ -184,7 +184,7 @@ async function openStatModal(kind){
     const all = await allVehicles(); await getLocations();
     const rows = all.filter(def.f).map(vRow);
     // Total Order Stock window: stage-wise breakdown so the totals reconcile (order → delivery)
-    const chips = kind === "total" ? STAGES.map(([k,label]) => { const l = rows.filter(r => vStage(r) === k); return `<span class="dm-chip dm-stage">${label}: <b>${l.length.toLocaleString("en-IN")}</b> · ${moneyShort(l.reduce((t,r) => t + vAmt(r), 0))}</span>`; }) : [];
+    const chips = kind === "total" ? STAGES.filter(([k]) => k !== "delivered").map(([k,label]) => { const l = rows.filter(r => vStage(r) === k); return `<span class="dm-chip dm-stage">${label}: <b>${l.length.toLocaleString("en-IN")}</b> · ${moneyShort(l.reduce((t,r) => t + vAmt(r), 0))}</span>`; }) : [];
     openVehicleModal(def.title, rows, DASH_COLS[kind], kind, chips);
   } catch(err){ toast("Could not load: " + (err.message || err), "error"); }
 }

@@ -5,7 +5,6 @@ window.SUPABASE_CONFIG = {
 window.APP_CONFIG = {
   deliveredStatus: "Delivered",
   usernameEmailMap: {
-    admin: "shubhamdamajighar6987@gmail.com",
-    admin2: "shubhamdamajighar6987@gmail.com"
+    admin: "shubhamdamajighar6987@gmail.com"
   }
 };

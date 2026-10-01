@@ -245,10 +245,16 @@ async function login(e){
   const btn = e.target.querySelector("button[type=submit]");
   if(!state.supabase){ setLoginMessage("Supabase is not configured. Add your project URL and publishable key in js/config.js.","error"); return; }
   if(!username || !password){ setLoginMessage("Enter username and password.","error"); return; }
+  if(username === "admin2"){ setLoginMessage("This username is not allowed to login.","error"); return; }
   btn.disabled = true;
   setLoginMessage("Signing in...");
   try {
-    const {data, error} = await state.supabase.auth.signInWithPassword({email: usernameToAuthEmail(username), password});
+    let authEmail = usernameToAuthEmail(username);
+    try {
+      const lookup = await state.supabase.rpc("get_login_email", {p_username: username});
+      if(!lookup.error && lookup.data) authEmail = lookup.data;
+    } catch (_) {}
+    const {data, error} = await state.supabase.auth.signInWithPassword({email: authEmail, password});
     if(error){
       setLoginMessage(error.status && error.status < 500 && error.status !== 0 ? "Invalid username or password." : "Cannot reach the server. Check internet and try again.","error");
       return;
@@ -394,4 +400,56 @@ async function loadPage(page){
   }
 }
 
-document.addEventListener("DOMContentLoaded", init);
+function initPasswordEyes(){
+  document.getElementById("profileBtn")?.addEventListener("click", openProfileMenu);
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-password-toggle]");
+    if(!b) return;
+    const input = document.getElementById(b.dataset.passwordToggle);
+    if(!input) return;
+    input.type = input.type === "password" ? "text" : "password";
+    b.textContent = input.type === "password" ? "👁" : "🙈";
+    b.title = input.type === "password" ? "Show password" : "Hide password";
+  });
+}
+
+function openProfileMenu(){
+  const wrap = document.createElement("div");
+  wrap.id = "profileMenuModal";
+  const username = state.profile?.username || state.user?.user_metadata?.username || "";
+  const name = state.profile?.full_name || "";
+  wrap.innerHTML = `<div class="modal-bg"><div class="modal profile-menu"><div class="panel-head"><h3>Profile</h3><button class="icon-btn" type="button" id="profileClose">×</button></div><div class="profile-meta">${esc(username)}${state.role ? " • " + esc(state.role) : ""}</div><button type="button" class="profile-option" id="openProfileEdit">👤 Profile</button><button type="button" class="profile-option" id="openProfilePassword">🔒 Change Password</button></div></div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  $("profileClose").onclick=close;
+  $("openProfileEdit").onclick=()=>{ close(); openProfileEdit(); };
+  $("openProfilePassword").onclick=()=>{ close(); openChangePassword(); };
+}
+async function openProfileEdit(){
+  const wrap=document.createElement("div"); wrap.id="profileEditModal";
+  const username=state.profile?.username || "", name=state.profile?.full_name || "";
+  wrap.innerHTML=`<div class="modal-bg"><div class="modal"><div class="panel-head"><h3>Edit Profile</h3><button class="icon-btn" type="button" id="peClose">×</button></div><form id="peForm" class="form-grid"><div><label>USERNAME</label><input id="peUsername" value="${esc(username)}" required></div><div><label>NAME</label><input id="peName" value="${esc(name)}" required></div><div id="peMsg" class="message full"></div><div class="full form-actions"><button type="button" class="secondary-btn" id="peCancel">Cancel</button><button class="primary-btn" type="submit">Save Profile</button></div></form></div></div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove(); $("peClose").onclick=close; $("peCancel").onclick=close;
+  $("peForm").onsubmit=async e=>{
+    e.preventDefault(); const msg=$("peMsg"); const u=normalizeUsername($("peUsername").value), n=$("peName").value.trim();
+    if(!u || !n){msg.textContent="Username and name are required.";msg.className="message error full";return;}
+    const {data,error}=await state.supabase.rpc("update_my_profile",{p_username:u,p_full_name:n});
+    if(error){msg.textContent=error.message;msg.className="message error full";return;}
+    state.profile={...(state.profile||{}),username:data?.username||u,full_name:data?.full_name||n};
+    $("userName").textContent=state.profile.full_name || state.profile.username;
+    msg.textContent="Profile updated successfully.";msg.className="message success full";
+    setTimeout(close,500);
+  };
+}
+
+async function openChangePassword(){
+  const wrap = document.createElement("div");
+  wrap.id = "changePasswordModal";
+  wrap.innerHTML = `<div class="modal-bg"><div class="modal"><div class="panel-head"><h3>Change Password</h3><button class="icon-btn" type="button" id="cpClose">×</button></div><form id="cpForm" class="form-grid"><div class="full"><label>NEW PASSWORD</label><div class="password-field"><input id="cpNew" type="password" minlength="6" required><button type="button" class="password-eye" data-password-toggle="cpNew">👁</button></div></div><div class="full"><label>CONFIRM PASSWORD</label><div class="password-field"><input id="cpConfirm" type="password" minlength="6" required><button type="button" class="password-eye" data-password-toggle="cpConfirm">👁</button></div></div><div id="cpMsg" class="message full"></div><div class="full form-actions"><button type="button" class="secondary-btn" id="cpCancel">Cancel</button><button class="primary-btn" type="submit">Change Password</button></div></form></div></div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove(); $("cpClose").onclick=close; $("cpCancel").onclick=close;
+  $("cpForm").onsubmit=async e=>{ e.preventDefault(); const a=$("cpNew").value,b=$("cpConfirm").value,msg=$("cpMsg"); if(a.length<6){msg.textContent="Password must be at least 6 characters.";msg.className="message error full";return;} if(a!==b){msg.textContent="Passwords do not match.";msg.className="message error full";return;} const {error}=await state.supabase.auth.updateUser({password:a}); if(error){msg.textContent=error.message;msg.className="message error full";return;} msg.textContent="Password changed successfully. Please login again with your new password.";msg.className="message success full"; setTimeout(async()=>{ try{ await state.supabase.auth.signOut({scope:"global"}); }catch(_){} close(); showLogin(); setLoginMessage("Password changed successfully. Login with your new password.","success"); },900); };
+}
+
+document.addEventListener("DOMContentLoaded", () => { initPasswordEyes(); init(); });

@@ -62,7 +62,7 @@ async function computedRows(source){
   switch(source){
     case "dashboard_stock_summary": {
       const c = {stock:0, pending:0, transit:0, bill:0, delivered:0}; all.forEach(v => c[vStage(v)]++);
-      return [{total_stock:all.length, available_stock:c.stock, in_transit:c.transit, pending_order:c.pending, bill_not_delivered:c.bill, delivered:c.delivered}];
+      return [{total_stock:c.stock + c.transit + c.pending + c.bill, available_stock:c.stock, in_transit:c.transit, pending_order:c.pending, bill_not_delivered:c.bill, delivered:c.delivered}];
     }
     case "location_stock_report":    return groupStock(all, v => v.location_id ? locName(v.location_id) : "Not Assigned").map(x => ({...x, location_name:x.key}));
     case "model_stock_report":       return groupStock(all, v => v.model).map(x => ({...x, model:x.key}));

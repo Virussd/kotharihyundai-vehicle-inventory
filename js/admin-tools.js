@@ -48,12 +48,20 @@ function renderSettingsPage(page){
   const field = (id, label, val, extra = "") => `<div><label for="${id}">${label}</label><input id="${id}" name="${id}" value="${esc(val ?? "")}" ${extra} ${dis}></div>`;
   if(page === "company"){
     const co = S.company;
-    c.innerHTML = `<div class="panel"><div class="panel-head"><h3>Company</h3></div>${notice}<form id="setForm" class="settings-form">
-      ${field("company_name","COMPANY NAME",co.company_name || "Kothari Hyundai","required")}${field("brand","BRAND / SHORT NAME",co.brand)}
-      ${field("gstin","GSTIN",co.gstin,'maxlength="15"')}${field("phone","PHONE",co.phone)}${field("email","EMAIL",co.email,'type="email"')}
-      <div class="full"><label for="address">ADDRESS</label><textarea id="address" name="address" rows="2" ${dis}>${esc(co.address || "")}</textarea></div>
-      <div class="full"><label for="gate_pass_note">GATE PASS FOOTER NOTE</label><textarea id="gate_pass_note" name="gate_pass_note" rows="2" placeholder="Printed at the bottom of every gate pass" ${dis}>${esc(co.gate_pass_note || "")}</textarea></div>
-      ${save}</form></div>`;
+    c.innerHTML = `<div class="company-settings-page"><div class="company-settings-card">
+      <div class="company-settings-header"><h3>Company Settings</h3><p>Manage the company information used across the vehicle inventory system and gate passes.</p></div>
+      <form id="setForm" class="company-settings-body">${notice ? `<div class="company-settings-note">${notice}</div>` : ""}
+        <div class="company-settings-grid">
+          <div class="company-settings-field"><label for="company_name">COMPANY NAME</label><input id="company_name" name="company_name" value="${esc(co.company_name || "Kothari Hyundai")}" required ${dis}></div>
+          <div class="company-settings-field"><label for="brand">BRAND / SHORT NAME</label><input id="brand" name="brand" value="${esc(co.brand || "")}" ${dis}></div>
+          <div class="company-settings-field"><label for="gstin">GSTIN</label><input id="gstin" name="gstin" value="${esc(co.gstin || "")}" maxlength="15" ${dis}></div>
+          <div class="company-settings-field"><label for="phone">PHONE</label><input id="phone" name="phone" value="${esc(co.phone || "")}" ${dis}></div>
+          <div class="company-settings-field"><label for="email">EMAIL</label><input id="email" name="email" type="email" value="${esc(co.email || "")}" ${dis}></div>
+          <div class="company-settings-field company-settings-full"><label for="address">ADDRESS</label><textarea id="address" name="address" rows="3" ${dis}>${esc(co.address || "")}</textarea></div>
+          <div class="company-settings-field company-settings-full"><label for="gate_pass_note">GATE PASS FOOTER NOTE</label><textarea id="gate_pass_note" name="gate_pass_note" rows="3" placeholder="Printed at the bottom of every gate pass" ${dis}>${esc(co.gate_pass_note || "")}</textarea></div>
+        </div>
+        ${ro ? "" : `<div class="company-settings-actions"><button class="primary-btn" type="submit" id="setSave">Save Settings</button></div>`}
+      </form></div></div>`;
     $("setForm").addEventListener("submit", async e => {
       e.preventDefault(); const f = Object.fromEntries(new FormData(e.target).entries()), btn = $("setSave"); btn.disabled = true;
       const row = {id:1, company_name:nzv(f.company_name), brand:nzv(f.brand), gstin:nzv(f.gstin)?.toUpperCase() || null, address:nzv(f.address), phone:nzv(f.phone), email:nzv(f.email), gate_pass_note:nzv(f.gate_pass_note), updated_at:new Date().toISOString()};
