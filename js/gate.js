@@ -39,7 +39,7 @@ async function renderGate(page){
       <form id="gateForm" class="gate-form-grid">
         <input type="hidden" name="gate_name" value="${esc(gateName)}">
         <div class="gate-field"><label for="gateLocation">LOCATION <span>*</span></label>${locField}</div>
-        <div class="gate-field gate-vin-field"><label for="gateVin">VIN NUMBER <span>*</span></label><div class="gate-input-icon"><input name="vin" id="gateVin" required autocomplete="off" placeholder="Enter VIN / last 6 digits"><button type="button" id="gateScan" title="Scan VIN barcode" aria-label="Scan VIN barcode">📷 Scan</button></div><div id="gateVinSuggestions" class="gate-suggestions"></div></div>
+        <div class="gate-field gate-vin-field"><label for="gateVin">VIN NUMBER <span>*</span></label><div class="gate-input-icon"><input name="vin" id="gateVin" required autocomplete="off" maxlength="17" inputmode="text" autocapitalize="characters" placeholder="Enter VIN / last 6 digits"><button type="button" id="gateScan" title="Scan VIN barcode" aria-label="Scan VIN barcode">📷 Scan</button></div><div id="gateVinSuggestions" class="gate-suggestions"></div></div>
         <div class="gate-field"><label for="gateEngineNo">ENGINE NO.</label><input name="engine_no" id="gateEngineNo" placeholder="Auto / Manual"></div>
         <div class="gate-field"><label for="gateVariant">VARIANT</label><input name="variant" id="gateVariant" placeholder="Auto / Manual"></div>
         <div class="gate-field"><label for="gateColor">COLOR</label><input name="color" id="gateColor" placeholder="Auto / Manual"></div>

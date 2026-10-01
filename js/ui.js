@@ -74,24 +74,44 @@ async function downloadPath(path, fileName){
 
 /* --------------------------------------------------------------- VIN scanner */
 function cleanScan(text){
-  const t = String(text || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const m = /[A-HJ-NPR-Z0-9]{17}/.exec(t);          // real VINs never contain I, O, Q
-  return m ? m[0] : t;
+  return String(text || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
-let zxingLoading = null;
-function loadZxing(){
-  if(window.ZXingBrowser) return Promise.resolve(window.ZXingBrowser);
-  return zxingLoading ||= new Promise((res, rej) => {
-    const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js";
-    s.onload = () => res(window.ZXingBrowser); s.onerror = () => { zxingLoading = null; rej(new Error("scanner library could not load")); }; document.head.appendChild(s);
-  });
+
+// Hyundai label format:
+// VIN line:  MALPA813LTM  (11 characters)
+// DIESEL:    340539      (6 digits)
+// Complete VIN: MALPA813LTM340539
+function buildHyundaiVIN(parts){
+  const values = (Array.isArray(parts) ? parts : [parts])
+    .map(v => cleanScan(v))
+    .filter(Boolean);
+
+  for(const v of values){
+    if(/^[A-HJ-NPR-Z0-9]{17}$/.test(v)) return v;
+  }
+
+  for(const a of values){
+    if(!/^[A-HJ-NPR-Z0-9]{11}$/.test(a)) continue;
+    for(const b of values){
+      if(!/^[0-9]{6}$/.test(b)) continue;
+      const vin = a + b;
+      if(/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return vin;
+    }
+  }
+
+  const joined = values.join("");
+  const m = joined.match(/([A-HJ-NPR-Z0-9]{11})([0-9]{6})/);
+  return m ? m[1] + m[2] : "";
 }
-/** Opens the camera, calls onResult(vin) on the first code found. Works with the browser BarcodeDetector,
- *  falls back to ZXing, and always offers "take a photo of the barcode". */
-async function openScanner(onResult){
+
+function isValidScannedVIN(vin){
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(String(vin || ""));
+}
+
+function openScanner(onResult){
   openModal(`<div class="modal-bg" id="scanBg"><div class="modal scan-modal" role="dialog" aria-modal="true" aria-label="Scan VIN">
     <div class="panel-head"><h3>Scan VIN / Chassis barcode</h3><button class="icon-btn" type="button" id="scanClose" aria-label="Close">×</button></div>
-    <video id="scanVideo" playsinline muted autoplay></video><p id="scanMsg" class="form-help">Point the camera at the VIN barcode or QR code.</p>
+    <video id="scanVideo" playsinline muted autoplay></video><p id="scanMsg" class="form-help">Scan VIN: 11-character VIN part + 6-digit number. Example: MALPA813LTM + 340539</p>
     <div class="form-actions"><label class="secondary-btn scan-photo">📷 Take / choose photo<input id="scanFile" type="file" accept="image/*" capture="environment" hidden></label>
     <button type="button" class="secondary-btn" id="scanCancel">Cancel</button></div></div></div>`);
   const msg = t => { const m = $("scanMsg"); if(m) m.textContent = t; };
@@ -99,7 +119,31 @@ async function openScanner(onResult){
   const stop = () => { finished = true; clearInterval(timer); try { zxControls?.stop(); } catch { /* ignore */ } stream?.getTracks().forEach(t => t.stop()); closeModal(); document.removeEventListener("keydown", onKey); };
   const onKey = e => { if(e.key === "Escape") stop(); };
   document.addEventListener("keydown", onKey);
-  const found = text => { if(finished) return; const v = cleanScan(text); if(v.length < 6) return; stop(); onResult(v); };
+    const scanParts = [];
+  const found = text => {
+    if(finished) return;
+
+    const v = cleanScan(text);
+    if(!v) return;
+
+    // Accept a complete 17-character VIN directly.
+    let vin = buildHyundaiVIN([v]);
+
+    // Or combine the Hyundai label's 11-character VIN part + 6-digit part.
+    if(!vin){
+      scanParts.push(v);
+      while(scanParts.length > 4) scanParts.shift();
+      vin = buildHyundaiVIN(scanParts);
+    }
+
+    if(!isValidScannedVIN(vin)){
+      msg("Scan VIN: 11-character VIN part + 6-digit number. Example: MALPA813LTM + 340539");
+      return;
+    }
+
+    stop();
+    onResult(vin);
+  };
   $("scanClose").onclick = stop; $("scanCancel").onclick = stop;
 
   let detector = null;
