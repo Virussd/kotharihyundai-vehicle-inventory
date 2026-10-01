@@ -55,12 +55,13 @@ const EXCEL_FIELDS = [
   ["grn_date","GRN Date","date"],
   ["sale_tax","Sale Tax","money"],
   ["fob_key","FOB Key","text"],
-  // ---- Sales report (Bill Inv Date, Vin No, Engine no, Customer name, Bill No., TL, SC, Bill Location, Model, Variant, COLOUR, Total Bill Amount)
-  ["bill_date","Bill Inv Date","date",["bill date","bill invoice date"]],
-  ["bill_no","Bill No.","text",["bill no","bill number"]],
+  // ---- Sales report (Tally Invoice Date, Vin No, Engine No, Customer Name, Tally Invoice No, Tally Location, Model, Variant, Color, Total Invoice value)
+  //      Only Tally Invoice Date, VIN, Customer Name, Tally Invoice No, Tally Location are imported; the rest is taken from the Purchase report.
+  ["bill_date","Tally Invoice Date","date",["bill inv date","bill date","bill invoice date"]],
+  ["bill_no","Tally Invoice No","text",["tally invoice no.","tally invoice number","bill no","bill number"]],
   ["team_leader","TL","text",["team leader"]],
   ["executive","SC","text",["sales consultant","sales executive"]],
-  ["sales_location","Bill Location","text"],
+  ["sales_location","Tally Location","text",["bill location"]],
   ["bill_amount","Total Bill Amount","money",["bill amount"]]
 ];
 // Not in the Excel files but kept on the vehicle record

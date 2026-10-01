@@ -10,11 +10,11 @@ const DEL = {vehicle:null, rows:[], from:"", to:"", loc:"", q:""};
 const DEL_FIELDS = [
   ["engine_no","ENGINE NO","text","Purchase report"], ["model","MODEL","text","Purchase report"], ["variant","VARIANT","text","Purchase report"],
   ["color","COLOUR","text","Purchase report"], ["finance_company","FINANCE NAME","text","Purchase report"], ["customer_name","CUSTOMER NAME","text","Sales report"],
-  ["bill_no","BILL INV NO","text","Sales report"], ["team_leader","TL","text","Sales report"], ["executive","SC","text","Sales report"]
+  ["bill_no","TALLY INVOICE NO","text","Sales report"], ["team_leader","TL","text","Sales report"], ["executive","SC","text","Sales report"]
 ];
 const DEL_COLS = [
   ["Delivery Date","delivery_date","date"],["VIN No.","vin"],["Engine No","engine_no"],["Model","model"],["Variant","variant"],["Colour","color"],
-  ["Customer Name","customer_name"],["Bill Inv No","bill_no"],["TL","team_leader"],["SC","executive"],["Financier Name","finance_company"],["Delivery Location","dloc"]
+  ["Customer Name","customer_name"],["Tally Invoice No","bill_no"],["TL","team_leader"],["SC","executive"],["Financier Name","finance_company"],["Delivery Location","dloc"]
 ];
 const delClean = v => { const t = String(v ?? "").trim(); return t === "" ? null : t; };
 const delVin = v => String(v || "").replace(/\s+/g, "").toUpperCase();
@@ -46,7 +46,7 @@ async function renderDelivery(page){
   if(page !== "delivery-entry") return renderDeliveryList(page, titles[page]);
   await getLocations(); DEL.vehicle = null;
   $("content").innerHTML = `<div class="panel"><div class="panel-head"><h3>Delivery Entry</h3></div>
-  <p class="form-help">Enter the VIN and press <b>Fetch</b> (or Enter): Engine No, Model, Variant, Colour, Finance Name come from the <b>Purchase report</b>; Customer Name, Bill Inv No, TL, SC from the <b>Sales report</b>. Every field can be changed or typed manually.</p>
+  <p class="form-help">Enter the VIN and press <b>Fetch</b> (or Enter): Engine No, Model, Variant, Colour, Finance Name come from the <b>Purchase report</b>; Customer Name, Tally Invoice No, TL, SC from the <b>Sales report</b>. Every field can be changed or typed manually.</p>
   <form id="deliveryForm" class="form-grid">
     <div class="full"><label for="d_vin">VIN *</label><div class="searchbox" style="max-width:none"><input id="d_vin" name="vin" required autocomplete="off" placeholder="VIN or last 6 digits"><button type="button" id="d_fetch">Fetch</button></div><div id="d_info" class="form-help"></div></div>
     ${DEL_FIELDS.map(([k, l, , h]) => delInput(k, l, "", h)).join("")}

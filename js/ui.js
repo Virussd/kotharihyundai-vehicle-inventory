@@ -74,44 +74,47 @@ async function downloadPath(path, fileName){
 
 /* --------------------------------------------------------------- VIN scanner */
 function cleanScan(text){
-  return String(text || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const t = String(text || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const m = /[A-HJ-NPR-Z0-9]{17}/.exec(t);          // real VINs never contain I, O, Q
+  return m ? m[0] : t;
 }
-
-// Hyundai label format:
-// VIN line:  MALPA813LTM  (11 characters)
-// DIESEL:    340539      (6 digits)
-// Complete VIN: MALPA813LTM340539
-function buildHyundaiVIN(parts){
-  const values = (Array.isArray(parts) ? parts : [parts])
-    .map(v => cleanScan(v))
-    .filter(Boolean);
-
-  for(const v of values){
-    if(/^[A-HJ-NPR-Z0-9]{17}$/.test(v)) return v;
-  }
-
-  for(const a of values){
-    if(!/^[A-HJ-NPR-Z0-9]{11}$/.test(a)) continue;
-    for(const b of values){
-      if(!/^[0-9]{6}$/.test(b)) continue;
-      const vin = a + b;
-      if(/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return vin;
-    }
-  }
-
-  const joined = values.join("");
-  const m = joined.match(/([A-HJ-NPR-Z0-9]{11})([0-9]{6})/);
-  return m ? m[1] + m[2] : "";
+/** Hyundai label: barcodes carry only the 6-digit serial (e.g. "FHY 340539" / "33340539"); the first 11 chars
+ *  (MALPA813LTM) are printed text. So: full VIN -> use it; 11-char prefix -> remember; trailing 6 digits -> serial. */
+function parseScan(text){
+  const t = String(text || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const full = /[A-HJ-NPR-Z0-9]{17}/.exec(t);
+  if(full) return {vin: full[0]};
+  if(/^[A-HJ-NPR-Z]{3}[A-HJ-NPR-Z0-9]{8}$/.test(t)) return {prefix: t};
+  const m = /(\d{6})$/.exec(t);
+  return m ? {serial: m[1]} : {};
 }
-
-function isValidScannedVIN(vin){
-  return /^[A-HJ-NPR-Z0-9]{17}$/.test(String(vin || ""));
+/** serial (+ optional 11-char prefix) -> full 17-char VIN from stock. Returns {vin} | {need:"prefix", count} | {vin:null} */
+async function resolveSerial(serial, prefix){
+  if(prefix && prefix.length === 11 && !state.supabase) return {vin: prefix + serial};
+  if(!state.supabase) return {vin: null};
+  const r = await state.supabase.from("vehicles").select("vin").ilike("vin", `%${serial}`).limit(20);
+  if(r.error) return {vin: prefix && prefix.length === 11 ? prefix + serial : null};
+  let rows = (r.data || []).map(x => String(x.vin || "").toUpperCase()).filter(v => v.length === 17 && v.endsWith(serial));
+  if(prefix) rows = rows.filter(v => v.startsWith(prefix));
+  if(rows.length === 1) return {vin: rows[0]};
+  if(rows.length > 1) return {need: "prefix", count: rows.length};
+  return prefix && prefix.length === 11 ? {vin: prefix + serial} : {vin: null};
 }
-
-function openScanner(onResult){
+let zxingLoading = null;
+function loadZxing(){
+  if(window.ZXingBrowser) return Promise.resolve(window.ZXingBrowser);
+  return zxingLoading ||= new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js";
+    s.onload = () => res(window.ZXingBrowser); s.onerror = () => { zxingLoading = null; rej(new Error("scanner library could not load")); }; document.head.appendChild(s);
+  });
+}
+/** Opens the camera, calls onResult(vin) on the first code found. Works with the browser BarcodeDetector,
+ *  falls back to ZXing, and always offers "take a photo of the barcode". */
+async function openScanner(onResult){
   openModal(`<div class="modal-bg" id="scanBg"><div class="modal scan-modal" role="dialog" aria-modal="true" aria-label="Scan VIN">
     <div class="panel-head"><h3>Scan VIN / Chassis barcode</h3><button class="icon-btn" type="button" id="scanClose" aria-label="Close">×</button></div>
-    <video id="scanVideo" playsinline muted autoplay></video><p id="scanMsg" class="form-help">Scan VIN: 11-character VIN part + 6-digit number. Example: MALPA813LTM + 340539</p>
+    <video id="scanVideo" playsinline muted autoplay></video><p id="scanMsg" class="form-help">Point the camera at the VIN barcode or QR code.</p>
+    <div id="scanPrefixBox" style="display:none;margin:6px 0"><input id="scanPrefix" maxlength="11" placeholder="VIN पहिले 11 characters (e.g. MALPA813LTM)" style="width:100%;text-transform:uppercase"></div>
     <div class="form-actions"><label class="secondary-btn scan-photo">📷 Take / choose photo<input id="scanFile" type="file" accept="image/*" capture="environment" hidden></label>
     <button type="button" class="secondary-btn" id="scanCancel">Cancel</button></div></div></div>`);
   const msg = t => { const m = $("scanMsg"); if(m) m.textContent = t; };
@@ -119,31 +122,29 @@ function openScanner(onResult){
   const stop = () => { finished = true; clearInterval(timer); try { zxControls?.stop(); } catch { /* ignore */ } stream?.getTracks().forEach(t => t.stop()); closeModal(); document.removeEventListener("keydown", onKey); };
   const onKey = e => { if(e.key === "Escape") stop(); };
   document.addEventListener("keydown", onKey);
-    const scanParts = [];
-  const found = text => {
+  const acc = {prefix:null, serial:null, tried:null}, finish = vin => { if(finished) return; stop(); onResult(vin); };
+  const showPrefixBox = () => { const b = $("scanPrefixBox"); if(b) b.style.display = "block"; };
+  const resolveAcc = async () => {
+    if(finished || !acc.serial) return;
+    const key = acc.serial + "|" + (acc.prefix || ""); if(acc.tried === key) return; acc.tried = key;
+    msg("Serial " + acc.serial + " सापडला — stock मधून full VIN शोधत आहे…");
+    const r = await resolveSerial(acc.serial, acc.prefix);
     if(finished) return;
-
-    const v = cleanScan(text);
-    if(!v) return;
-
-    // Accept a complete 17-character VIN directly.
-    let vin = buildHyundaiVIN([v]);
-
-    // Or combine the Hyundai label's 11-character VIN part + 6-digit part.
-    if(!vin){
-      scanParts.push(v);
-      while(scanParts.length > 4) scanParts.shift();
-      vin = buildHyundaiVIN(scanParts);
-    }
-
-    if(!isValidScannedVIN(vin)){
-      msg("Scan VIN: 11-character VIN part + 6-digit number. Example: MALPA813LTM + 340539");
-      return;
-    }
-
-    stop();
-    onResult(vin);
+    if(r.vin) return finish(r.vin);
+    showPrefixBox();
+    msg(r.need ? r.count + " vehicles मध्ये " + acc.serial + " आहे — VIN चे पहिले 11 characters (MALPA813LTM) टाका."
+               : acc.serial + " stock मध्ये नाही — नवीन vehicle साठी VIN चे पहिले 11 characters (MALPA813LTM) टाका.");
   };
+  const found = text => {
+    if(finished) return; const p = parseScan(text);
+    if(p.vin) return finish(p.vin);
+    if(p.prefix) acc.prefix = p.prefix; if(p.serial) acc.serial = p.serial;
+    if(acc.serial) resolveAcc();
+  };
+  $("scanPrefix")?.addEventListener("input", e => {
+    const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); e.target.value = v;
+    if(v.length === 11 && acc.serial){ acc.prefix = v; acc.tried = null; resolveAcc(); }
+  });
   $("scanClose").onclick = stop; $("scanCancel").onclick = stop;
 
   let detector = null;
@@ -152,9 +153,9 @@ function openScanner(onResult){
   $("scanFile").addEventListener("change", async e => {              // photo of the barcode
     const f = e.target.files[0]; if(!f) return; msg("Reading photo…");
     try {
-      if(detector){ const codes = await detector.detect(await createImageBitmap(f)); if(codes.length) return found(codes[0].rawValue); }
+      if(detector){ const codes = await detector.detect(await createImageBitmap(f)); if(codes.length){ codes.forEach(c => found(c.rawValue)); return; } }
       const Z = await loadZxing(), url = URL.createObjectURL(f);
-      try { const r = await new Z.BrowserMultiFormatReader().decodeFromImageUrl(url); return found(r.getText()); } finally { URL.revokeObjectURL(url); }
+      try { const r = await new Z.BrowserMultiFormatReader().decodeFromImageUrl(url); found(r.getText()); return; } finally { URL.revokeObjectURL(url); }
     } catch { msg("No barcode found in that photo. Try again closer, or type the VIN."); }
   });
 
@@ -164,7 +165,7 @@ function openScanner(onResult){
   if(finished){ stream.getTracks().forEach(t => t.stop()); return; }
   const video = $("scanVideo"); video.srcObject = stream; try { await video.play(); } catch { /* autoplay */ }
   if(detector){
-    timer = setInterval(async () => { if(finished || video.readyState < 2) return; try { const c = await detector.detect(video); if(c.length) found(c[0].rawValue); } catch { /* keep trying */ } }, 300);
+    timer = setInterval(async () => { if(finished || video.readyState < 2) return; try { const c = await detector.detect(video); c.forEach(x => found(x.rawValue)); } catch { /* keep trying */ } }, 300);
   } else {
     try {
       const Z = await loadZxing(); stream.getTracks().forEach(t => t.stop()); stream = null;

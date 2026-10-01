@@ -141,7 +141,21 @@ function statusBadge(s){ return raw(`<span class="badge ${statusClass(s)}">${esc
 // PostgREST .or()/.ilike values: remove characters that break the filter grammar
 function cleanQuery(q){ return String(q || "").replace(/[,()%*\\:"']/g," ").replace(/\s+/g," ").trim(); }
 
+/* "Saved" feedback: the Save / Import / Done button that was just pressed turns into "✓ Saved" for 2.5 s after a success toast. */
+let lastSaveBtn = null, lastSaveAt = 0;
+document.addEventListener("click", e => { const b = e.target.closest?.("button"); if(b && /save|import|done|update|apply/i.test(b.textContent || "")){ lastSaveBtn = b; lastSaveAt = Date.now(); } }, true);
+document.addEventListener("submit", e => { const b = e.submitter || e.target.querySelector?.('button[type="submit"],button:not([type])'); if(b){ lastSaveBtn = b; lastSaveAt = Date.now(); } }, true);
+function markSaved(){
+  const b = lastSaveBtn; if(!b || Date.now() - lastSaveAt > 60000 || b.dataset.savedShown) return;
+  setTimeout(() => {                                   // after the handler's own "finally" has restored the label
+    if(!b.isConnected || b.dataset.savedShown) return;
+    const orig = b.textContent; b.dataset.savedShown = "1"; b.textContent = /import/i.test(orig) ? "✓ Imported" : "✓ Saved"; b.classList.add("is-saved");
+    setTimeout(() => { if(b.isConnected){ b.textContent = orig; b.classList.remove("is-saved"); } delete b.dataset.savedShown; }, 2500);
+  }, 80);
+  lastSaveBtn = null;
+}
 function toast(msg, type = "info"){
+  if(type === "success") markSaved();
   let box = $("toastBox");
   if(!box){
     box = document.createElement("div");

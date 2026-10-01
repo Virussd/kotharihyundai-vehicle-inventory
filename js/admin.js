@@ -121,7 +121,7 @@ async function renderUserEditor(page){
     const patch = byRole ? {role_id:s.value} : {active:s.value==="true"};
     if(state.user?.id === s.dataset.uid && !byRole && !patch.active){ toast("You cannot deactivate yourself.","error"); return renderUserEditor(page); }
     const {error} = await sb.from("user_profiles").update(patch).eq("id", s.dataset.uid);
-    if(error) toast(error.message,"error"); else { toast("Saved."); logAudit("UPDATE_USER","users","user",s.dataset.uid,patch); }
+    if(error) toast(error.message,"error"); else { toast("Saved.","success"); logAudit("UPDATE_USER","users","user",s.dataset.uid,patch); }
   }));
 }
 async function renderPermissions(){
